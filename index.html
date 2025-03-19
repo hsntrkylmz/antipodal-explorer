@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antipodal Explorer</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="assets/favicon.ico">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Antipodal Explorer</h1>
+            <p>Discover where you'd emerge if you dug through the center of the Earth</p>
+        </header>
+
+        <main>
+            <div class="earth-container">
+                <div class="earth-visualization">
+                    <div class="earth">
+                        <div class="marker start-point" id="start-marker"></div>
+                        <div class="marker end-point" id="end-marker"></div>
+                        <div class="dig-path" id="dig-path"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="location-panel">
+                <div class="location-details" id="start-location">
+                    <h2>Your Location</h2>
+                    <div id="current-location">
+                        <p>Allow location access to begin your journey.</p>
+                        <button id="location-permission-btn" class="btn">Share My Location</button>
+                    </div>
+                    <div id="location-coordinates" class="coordinates hidden">
+                        <p>Latitude: <span id="start-lat">--</span></p>
+                        <p>Longitude: <span id="start-lng">--</span></p>
+                        <p>Location: <span id="start-address">--</span></p>
+                    </div>
+                </div>
+
+                <div class="journey-animation hidden" id="journey-animation">
+                    <div class="journey-progress">
+                        <div class="journey-progress-bar" id="journey-progress-bar"></div>
+                    </div>
+                    <div class="journey-status">
+                        <p id="journey-status-text">Preparing to dig...</p>
+                    </div>
+                </div>
+
+                <div class="location-details hidden" id="end-location">
+                    <h2>Antipodal Destination</h2>
+                    <div id="destination-coordinates" class="coordinates">
+                        <p>Latitude: <span id="end-lat">--</span></p>
+                        <p>Longitude: <span id="end-lng">--</span></p>
+                        <p>Location: <span id="end-address">--</span></p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="action-panel">
+                <button id="start-journey-btn" class="btn btn-primary hidden">Begin Digging!</button>
+                <button id="reset-btn" class="btn hidden">Reset Journey</button>
+            </div>
+
+            <div class="info-panel">
+                <h2>About Antipodal Points</h2>
+                <p>An antipodal point is the point on the Earth's surface that is diametrically opposite to a given point. It's the place you would reach if you could tunnel straight through the center of the Earth.</p>
+                <p>Most antipodal points from land end up in the ocean, as land makes up only about 29% of Earth's surface.</p>
+            </div>
+        </main>
+
+        <footer>
+            <p>Created with ❤️ | <a href="https://github.com/yourusername/antipodal-explorer" target="_blank">View on GitHub</a></p>
+        </footer>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/earth-visualization.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
