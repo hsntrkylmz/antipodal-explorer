@@ -115,8 +115,21 @@
         }
     </script>
     <!-- Primary THREE.js scripts - use reliable CDNs -->
-    <script src="https://unpkg.com/three@0.139.0/build/three.min.js" data-threejs="core"></script>
-    <script src="https://unpkg.com/three@0.139.0/examples/js/controls/OrbitControls.js" data-threejs="orbit"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.139.0/build/three.min.js" data-threejs="core"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.139.0/examples/js/controls/OrbitControls.js" data-threejs="orbit"></script>
+    
+    <!-- Fallback local copies if needed -->
+    <script>
+        // Check that THREE.js was loaded correctly
+        setTimeout(function() {
+            if (typeof THREE === 'undefined') {
+                console.error('THREE.js failed to load automatically');
+                loadFallbackScripts();
+            } else {
+                console.log('THREE.js loaded successfully');
+            }
+        }, 1000);
+    </script>
 </head>
 <body>
     <div class="container">

@@ -23,6 +23,7 @@ class EarthVisualizer {
         }
         
         this.log('Initializing Earth Visualizer');
+        this.debug = true; // Enable logging for troubleshooting
         
         // Get container element
         if (typeof container === 'string') {
@@ -84,23 +85,39 @@ class EarthVisualizer {
             directionalLight.position.set(5, 3, 5);
             this.scene.add(directionalLight);
             
-            // Load textures and create Earth
+            // Create mouse object for raycasting
+            this.mouse = new THREE.Vector2();
+            
+            // First create stars background
+            this.createStarField();
+            
+            // Load textures and create Earth with better error handling
             this.loadTextures()
                 .then(() => {
-                    const earthCreated = this.createEarth();
-                    if (earthCreated) {
-                        this.createClouds();
-                        this.setupControls();
-                        this.setupInteractions();
-                        this.hideLoading();
-                        
-                        // Start animation loop
-                        this.animate();
-                    }
+                    this.log('Textures loaded, creating Earth');
+                    // Continue initialization regardless of texture loading result
+                    this.createEarth();
+                    this.createClouds();
+                    this.setupControls();
+                    this.setupInteractions();
+                    this.setupEventListeners();
+                    this.hideLoading();
+                    
+                    // Start animation loop
+                    this.animate();
                 })
                 .catch(error => {
-                    console.error('Error loading textures:', error);
-                    this.showLoadingError();
+                    console.error('Error in texture loading process:', error);
+                    // Still try to create Earth with fallbacks
+                    this.log('Attempting to create Earth with fallbacks after texture error');
+                    this.createEarth();
+                    this.setupControls();
+                    this.setupInteractions();
+                    this.setupEventListeners();
+                    this.hideLoading();
+                    
+                    // Start animation loop
+                    this.animate();
                 });
                 
             // Handle window resize
@@ -110,6 +127,87 @@ class EarthVisualizer {
             console.error('Error initializing EarthVisualizer:', error);
             this.showLoadingError();
         }
+    }
+    
+    // Create a star field background
+    createStarField() {
+        try {
+            const starsGeometry = new THREE.BufferGeometry();
+            const starsMaterial = new THREE.PointsMaterial({
+                color: 0xffffff,
+                size: 0.02,
+                transparent: true,
+                opacity: 0.8,
+                sizeAttenuation: true
+            });
+            
+            // Create 2000 stars positioned randomly in a sphere
+            const radius = 30;
+            const starsCount = 2000;
+            const positions = new Float32Array(starsCount * 3);
+            
+            for (let i = 0; i < starsCount; i++) {
+                const i3 = i * 3;
+                
+                // Random position on a sphere (not completely uniform but good enough)
+                const phi = Math.random() * Math.PI * 2;
+                const theta = Math.random() * Math.PI;
+                const r = radius * (0.5 + Math.random() * 0.5); // Vary distance
+                
+                positions[i3] = r * Math.sin(theta) * Math.cos(phi);
+                positions[i3 + 1] = r * Math.sin(theta) * Math.sin(phi);
+                positions[i3 + 2] = r * Math.cos(theta);
+            }
+            
+            starsGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            
+            this.stars = new THREE.Points(starsGeometry, starsMaterial);
+            this.scene.add(this.stars);
+            this.log('Created star field background');
+        } catch (error) {
+            console.warn('Could not create star field:', error);
+            // Not critical, continue without stars
+        }
+    }
+    
+    // Set up controls for camera
+    setupControls() {
+        try {
+            // Create controls
+            this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+            this.controls.enableDamping = true;
+            this.controls.dampingFactor = 0.1;
+            this.controls.rotateSpeed = 0.5;
+            this.controls.autoRotate = true;
+            this.controls.autoRotateSpeed = 0.5;
+            this.controls.enablePan = false;
+            this.controls.minDistance = 1.5;
+            this.controls.maxDistance = 5;
+            this.log('Camera controls initialized successfully');
+            return true;
+        } catch (error) {
+            console.error('Failed to initialize controls:', error);
+            // Create a simple controls alternative if OrbitControls fails
+            this.setupSimpleControls();
+            return false;
+        }
+    }
+    
+    // Simple controls alternative if OrbitControls fails
+    setupSimpleControls() {
+        this.log('Setting up simple controls fallback');
+        this.simpleControls = {
+            enabled: true,
+            autoRotate: true,
+            update: () => {
+                // Simple autorotation fallback
+                if (this.simpleControls.autoRotate && this.earth) {
+                    this.earth.rotation.y += 0.002;
+                }
+            }
+        };
+        // Use this as controls
+        this.controls = this.simpleControls;
     }
     
     // Check if WebGL is available
@@ -329,7 +427,32 @@ class EarthVisualizer {
             
             // Check if texture is loaded
             if (!this.textures || !this.textures.earthMap) {
-                throw new Error("Earth textures are not loaded properly");
+                console.warn("Earth textures not loaded properly, using simple color material");
+                // Create a simple material with a blue color as fallback
+                const material = new THREE.MeshPhongMaterial({
+                    color: 0x1565C0,
+                    specular: new THREE.Color(0x111111),
+                    shininess: 10
+                });
+                
+                this.earth = new THREE.Mesh(geometry, material);
+                this.earthMesh = this.earth;
+                this.scene.add(this.earth);
+                
+                // Add a simple atmosphere effect
+                const atmosphereGeometry = new THREE.SphereGeometry(this.earthRadius * 1.03, 32, 32);
+                const atmosphereMaterial = new THREE.MeshPhongMaterial({
+                    color: 0x4a8fdb,
+                    transparent: true,
+                    opacity: 0.2,
+                    side: THREE.BackSide
+                });
+                
+                const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
+                this.earth.add(atmosphere);
+                
+                this.log('Earth created with fallback material');
+                return true;
             }
             
             // Create material with texture and bump mapping
@@ -353,8 +476,23 @@ class EarthVisualizer {
             return true;
         } catch (error) {
             console.error('Error creating Earth:', error);
-            this.showLoadingError();
-            return false;
+            
+            // Create a very simple fallback Earth as last resort
+            try {
+                const simpleGeometry = new THREE.SphereGeometry(this.earthRadius, 32, 32);
+                const simpleMaterial = new THREE.MeshBasicMaterial({ color: 0x0077be });
+                
+                this.earth = new THREE.Mesh(simpleGeometry, simpleMaterial);
+                this.earthMesh = this.earth;
+                this.scene.add(this.earth);
+                
+                this.log('Created simple fallback Earth after error');
+                return true;
+            } catch (fallbackError) {
+                console.error('Could not create fallback Earth:', fallbackError);
+                this.showLoadingError();
+                return false;
+            }
         }
     }
     
@@ -437,25 +575,29 @@ class EarthVisualizer {
                     cloudsMap: null
                 };
                 
-                // Use reliable CDN-hosted texture maps with fallbacks
+                // Create fallback textures immediately to ensure we always have something
+                this.createFallbackTextures();
+                
+                console.log('Created fallback textures as safety net');
+                
+                // Use local textures as primary source with CDN backups
                 const textureURLs = {
                     earthMap: [
+                        'assets/textures/earth_daymap.jpg',
                         'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg',
                         'https://unpkg.com/three-globe@2.24.4/example/img/earth-blue-marble.jpg',
-                        'https://www.solarsystemscope.com/textures/download/2k_earth_daymap.jpg'
                     ],
                     earthBumpMap: [
-                        'https://threejs.org/examples/textures/planets/earth_normal_2048.jpg',
-                        'https://unpkg.com/three-globe@2.24.4/example/img/earth-topology.png'
+                        'assets/textures/earth_normal.jpg',
+                        'https://threejs.org/examples/textures/planets/earth_normal_2048.jpg'
                     ],
                     earthSpecMap: [
-                        'https://www.solarsystemscope.com/textures/download/2k_earth_specular_map.jpg',
-                        'https://unpkg.com/three-globe@2.24.4/example/img/earth-water.png'
+                        'assets/textures/earth_specular.jpg',
+                        'https://www.solarsystemscope.com/textures/download/2k_earth_specular_map.jpg'
                     ],
                     cloudsMap: [
-                        'https://threejs.org/examples/textures/planets/earth_clouds_2048.jpg',
-                        'https://unpkg.com/three-globe@2.24.4/example/img/earth-clouds.png',
-                        'https://www.solarsystemscope.com/textures/download/2k_earth_clouds.jpg'
+                        'assets/textures/earth_clouds.png',
+                        'https://threejs.org/examples/textures/planets/earth_clouds_2048.jpg'
                     ]
                 };
                 
@@ -466,53 +608,17 @@ class EarthVisualizer {
                 let loadedCount = 0;
                 const totalTextures = Object.keys(textureURLs).length;
                 
-                // Track load failures to allow completing the promise
-                let failedCount = 0;
-                
                 // Function to try loading a texture from multiple URLs
                 const tryLoadingTexture = (key, urlIndex = 0) => {
-                    // If we've tried all URLs for this texture
+                    // If we've tried all URLs for this texture, use the fallback
                     if (urlIndex >= textureURLs[key].length) {
-                        console.error(`Failed to load ${key} after trying all URLs`);
-                        // Create a placeholder colored texture
-                        const canvas = document.createElement('canvas');
-                        canvas.width = 256;
-                        canvas.height = 256;
-                        const ctx = canvas.getContext('2d');
-                        
-                        // Different colors for different texture types
-                        const colors = {
-                            earthMap: '#1565C0',
-                            earthBumpMap: '#555555',
-                            earthSpecMap: '#AAAAAA',
-                            cloudsMap: '#FFFFFF'
-                        };
-                        
-                        ctx.fillStyle = colors[key] || '#AAAAAA';
-                        ctx.fillRect(0, 0, canvas.width, canvas.height);
-                        
-                        // Add some text to indicate this is a fallback
-                        ctx.fillStyle = '#FFFFFF';
-                        ctx.font = '20px Arial';
-                        ctx.textAlign = 'center';
-                        ctx.fillText('Texture Not Available', canvas.width/2, canvas.height/2);
-                        
-                        // Create texture from canvas
-                        const texture = new THREE.CanvasTexture(canvas);
-                        this.textures[key] = texture;
-                        
+                        console.warn(`Using fallback for ${key} after trying all URLs`);
+                        // Already created fallback textures at initialization
                         loadedCount++;
-                        failedCount++;
-                        console.log(`Created fallback texture for ${key} (${loadedCount}/${totalTextures})`);
                         
                         if (loadedCount === totalTextures) {
-                            if (failedCount === totalTextures) {
-                                // All textures failed to load
-                                reject(new Error("Failed to load any textures from URLs"));
-                            } else {
-                                console.log('All textures loaded using fallbacks where needed');
-                                resolve();
-                            }
+                            console.log('All textures loaded (some using fallbacks)');
+                            resolve();
                         }
                         return;
                     }
@@ -523,7 +629,7 @@ class EarthVisualizer {
                     textureLoader.load(
                         url,
                         (texture) => {
-                            // Success
+                            // Success - replace fallback
                             this.textures[key] = texture;
                             loadedCount++;
                             console.log(`Loaded texture: ${key} from ${url} (${loadedCount}/${totalTextures})`);
@@ -546,15 +652,110 @@ class EarthVisualizer {
                     );
                 };
                 
-                // Start loading all textures
-                for (const key of Object.keys(textureURLs)) {
+                // Create default fallback textures upfront
+                for (const key of Object.keys(this.textures)) {
                     tryLoadingTexture(key);
                 }
             } catch (error) {
                 console.error('Error in loadTextures:', error);
-                reject(error);
+                // Don't reject, use fallbacks instead
+                this.createFallbackTextures();
+                resolve();
             }
         });
+    }
+    
+    // Create fallback textures for when loading fails
+    createFallbackTextures() {
+        const keys = ['earthMap', 'earthBumpMap', 'earthSpecMap', 'cloudsMap'];
+        const colors = {
+            earthMap: '#1565C0',
+            earthBumpMap: '#555555',
+            earthSpecMap: '#AAAAAA',
+            cloudsMap: '#FFFFFF'
+        };
+        
+        for (const key of keys) {
+            if (!this.textures[key]) {
+                const canvas = document.createElement('canvas');
+                canvas.width = 256;
+                canvas.height = 256;
+                const ctx = canvas.getContext('2d');
+                
+                // Create a simple gradient for more visual interest
+                const gradient = ctx.createRadialGradient(
+                    canvas.width/2, canvas.height/2, 0,
+                    canvas.width/2, canvas.height/2, canvas.width/2
+                );
+                
+                gradient.addColorStop(0, colors[key]);
+                gradient.addColorStop(1, this.adjustColor(colors[key], -20));
+                
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Add some texture with noise for bump and spec maps
+                if (key === 'earthBumpMap' || key === 'earthSpecMap') {
+                    this.addNoiseToCanvas(ctx, canvas.width, canvas.height, 20);
+                }
+                
+                // For clouds, add some cloud-like blobs
+                if (key === 'cloudsMap') {
+                    this.addCloudsToCanvas(ctx, canvas.width, canvas.height);
+                }
+                
+                // Create texture from canvas
+                const texture = new THREE.CanvasTexture(canvas);
+                this.textures[key] = texture;
+            }
+        }
+    }
+    
+    // Add noise to canvas for more interesting textures
+    addNoiseToCanvas(ctx, width, height, intensity = 30) {
+        const imageData = ctx.getImageData(0, 0, width, height);
+        const data = imageData.data;
+        
+        for (let i = 0; i < data.length; i += 4) {
+            const noise = Math.random() * intensity - intensity/2;
+            data[i] = Math.max(0, Math.min(255, data[i] + noise));
+            data[i+1] = Math.max(0, Math.min(255, data[i+1] + noise));
+            data[i+2] = Math.max(0, Math.min(255, data[i+2] + noise));
+        }
+        
+        ctx.putImageData(imageData, 0, 0);
+    }
+    
+    // Add cloud-like blobs to canvas
+    addCloudsToCanvas(ctx, width, height) {
+        ctx.globalCompositeOperation = 'destination-out';
+        
+        // Add 30 cloud blobs
+        for (let i = 0; i < 30; i++) {
+            const x = Math.random() * width;
+            const y = Math.random() * height;
+            const radius = 10 + Math.random() * 30;
+            
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            ctx.fill();
+        }
+        
+        ctx.globalCompositeOperation = 'source-over';
+    }
+    
+    // Helper to darken/lighten colors
+    adjustColor(hex, amount) {
+        let r = parseInt(hex.substr(1, 2), 16);
+        let g = parseInt(hex.substr(3, 2), 16);
+        let b = parseInt(hex.substr(5, 2), 16);
+        
+        r = Math.max(0, Math.min(255, r + amount));
+        g = Math.max(0, Math.min(255, g + amount));
+        b = Math.max(0, Math.min(255, b + amount));
+        
+        return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
     }
     
     // Convert latitude and longitude to 3D position on the globe
@@ -850,56 +1051,170 @@ class EarthVisualizer {
     drawDigPath(startLat, startLng, endLat, endLng) {
         this.log(`Drawing dig path from ${startLat.toFixed(2)}, ${startLng.toFixed(2)} to ${endLat.toFixed(2)}, ${endLng.toFixed(2)}`);
         
-        // Remove existing path if any
-        if (this.digLine) {
-            this.scene.remove(this.digLine);
-            this.digLine = null;
-        }
-        
-        const startPos = this.latLngTo3d(startLat, startLng, this.earthRadius);
-        const endPos = this.latLngTo3d(endLat, endLng, this.earthRadius);
-        
-        // Create a curve through the Earth
-        const points = [];
-        const segments = 50; // Reduced for better performance
-        
-        // Add points for a curved path through the Earth
-        for (let i = 0; i <= segments; i++) {
-            const t = i / segments;
-            
-            // Create a curved path that goes through the center of the Earth
-            if (i <= segments / 2) {
-                // First half: from start to center
-                const segmentT = i / (segments / 2);
-                // Curve downward toward center
-                const point = new THREE.Vector3();
-                
-                // Linear interpolation to center
-                point.x = (1 - segmentT) * startPos.x;
-                point.y = (1 - segmentT) * startPos.y;
-                point.z = (1 - segmentT) * startPos.z;
-                
-                points.push(point);
-            } else {
-                // Second half: from center to end
-                const segmentT = (i - segments / 2) / (segments / 2);
-                const point = new THREE.Vector3();
-                
-                // Linear interpolation from center
-                point.x = segmentT * endPos.x;
-                point.y = segmentT * endPos.y;
-                point.z = segmentT * endPos.z;
-                
-                points.push(point);
+        // Use marker positions if coordinates not provided
+        if (startLat === undefined || startLng === undefined || endLat === undefined || endLng === undefined) {
+            // Check if markers exist
+            if (!this.markerGroups['start-marker'] || !this.markerGroups['end-marker']) {
+                console.error('Cannot draw path - markers not set');
+                return null;
             }
+            
+            // Find marker positions
+            let startPos = null, endPos = null;
+            
+            // Get the first mesh in each marker group for position
+            this.markerGroups['start-marker'].traverse((object) => {
+                if (!startPos && object.isMesh) {
+                    startPos = object.position.clone();
+                }
+            });
+            
+            this.markerGroups['end-marker'].traverse((object) => {
+                if (!endPos && object.isMesh) {
+                    endPos = object.position.clone();
+                }
+            });
+            
+            if (!startPos || !endPos) {
+                console.error('Cannot find marker positions');
+                return null;
+            }
+            
+            console.log('Using marker positions for path:', 
+                         startPos.x.toFixed(2), startPos.y.toFixed(2), startPos.z.toFixed(2),
+                         endPos.x.toFixed(2), endPos.y.toFixed(2), endPos.z.toFixed(2));
+                         
+            // Remove existing path if any
+            if (this.digLine) {
+                this.scene.remove(this.digLine);
+                this.digLine.traverse((object) => {
+                    if (object.geometry) object.geometry.dispose();
+                    if (object.material) {
+                        if (Array.isArray(object.material)) {
+                            object.material.forEach(material => material.dispose());
+                        } else {
+                            object.material.dispose();
+                        }
+                    }
+                });
+                this.digLine = null;
+            }
+            
+            // Create points for the path (adapt the existing array method)
+            const points = [];
+            const segments = 50; // Reduced for better performance
+            
+            // Create points for a curved path through the Earth
+            for (let i = 0; i <= segments; i++) {
+                const t = i / segments;
+                
+                // Create a curved path that goes through the center of the Earth
+                if (i <= segments / 2) {
+                    // First half: from start to center
+                    const segmentT = i / (segments / 2);
+                    const point = new THREE.Vector3();
+                    
+                    // Linear interpolation to center
+                    point.x = (1 - segmentT) * startPos.x;
+                    point.y = (1 - segmentT) * startPos.y;
+                    point.z = (1 - segmentT) * startPos.z;
+                    
+                    points.push(point);
+                } else {
+                    // Second half: from center to end
+                    const segmentT = (i - segments / 2) / (segments / 2);
+                    const point = new THREE.Vector3();
+                    
+                    // Linear interpolation from center
+                    point.x = segmentT * endPos.x;
+                    point.y = segmentT * endPos.y;
+                    point.z = segmentT * endPos.z;
+                    
+                    points.push(point);
+                }
+            }
+            
+            // Create the curve
+            this.digPath = new THREE.CatmullRomCurve3(points);
+            
+            // Create the path mesh
+            this.createPathMesh(points);
+            
+            return this.digPath;
+        } else {
+            // Original method using lat/lng coordinates
+            // Remove existing path if any
+            if (this.digLine) {
+                this.scene.remove(this.digLine);
+                this.digLine.traverse((object) => {
+                    if (object.geometry) object.geometry.dispose();
+                    if (object.material) {
+                        if (Array.isArray(object.material)) {
+                            object.material.forEach(material => material.dispose());
+                        } else {
+                            object.material.dispose();
+                        }
+                    }
+                });
+                this.digLine = null;
+            }
+            
+            const startPos = this.latLngTo3d(startLat, startLng, this.earthRadius);
+            const endPos = this.latLngTo3d(endLat, endLng, this.earthRadius);
+            
+            // Create a curve through the Earth
+            const points = [];
+            const segments = 50; // Reduced for better performance
+            
+            // Add points for a curved path through the Earth
+            for (let i = 0; i <= segments; i++) {
+                const t = i / segments;
+                
+                // Create a curved path that goes through the center of the Earth
+                if (i <= segments / 2) {
+                    // First half: from start to center
+                    const segmentT = i / (segments / 2);
+                    // Curve downward toward center
+                    const point = new THREE.Vector3();
+                    
+                    // Linear interpolation to center
+                    point.x = (1 - segmentT) * startPos.x;
+                    point.y = (1 - segmentT) * startPos.y;
+                    point.z = (1 - segmentT) * startPos.z;
+                    
+                    points.push(point);
+                } else {
+                    // Second half: from center to end
+                    const segmentT = (i - segments / 2) / (segments / 2);
+                    const point = new THREE.Vector3();
+                    
+                    // Linear interpolation from center
+                    point.x = segmentT * endPos.x;
+                    point.y = segmentT * endPos.y;
+                    point.z = segmentT * endPos.z;
+                    
+                    points.push(point);
+                }
+            }
+            
+            // Create the curve
+            this.digPath = new THREE.CatmullRomCurve3(points);
+            
+            // Create the path mesh
+            this.createPathMesh(points);
+            
+            return this.digPath;
         }
-        
+    }
+    
+    // Create the path mesh for visualization
+    createPathMesh(points) {
         // Create the path group
         const pathGroup = new THREE.Group();
         
         // Create a tube geometry for a tunnel effect
         const curve = new THREE.CatmullRomCurve3(points);
-        const tubeGeometry = new THREE.TubeGeometry(curve, segments, 2.5, 8, false);
+        const tubeGeometry = new THREE.TubeGeometry(curve, 50, 0.025, 8, false);
         
         // Create a glowing tunnel material
         const tubeMaterial = new THREE.MeshPhongMaterial({
@@ -928,11 +1243,11 @@ class EarthVisualizer {
         pathGroup.add(line);
         
         // Add key glow points at start, middle, and end
-        const keyPoints = [0, Math.floor(segments/2), segments];
+        const keyPoints = [0, Math.floor(points.length/2), points.length-1];
         
         keyPoints.forEach(index => {
             if (index < points.length) {
-                const glowGeometry = new THREE.SphereGeometry(3, 16, 16);
+                const glowGeometry = new THREE.SphereGeometry(0.03, 16, 16);
                 const glowMaterial = new THREE.MeshBasicMaterial({
                     color: 0xffff00,
                     transparent: true,
@@ -948,8 +1263,6 @@ class EarthVisualizer {
         // Store and add to scene
         this.digLine = pathGroup;
         this.scene.add(pathGroup);
-        
-        return points;
     }
     
     // Start the journey animation between the two markers
@@ -1623,30 +1936,55 @@ class EarthVisualizer {
                 return;
             }
             
-            console.log('Globe clicked');
+            console.log('Globe clicked, checking for Earth intersection');
             
             // Get canvas-relative mouse coordinates
             const rect = this.renderer.domElement.getBoundingClientRect();
-            this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-            this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            const mouse = new THREE.Vector2();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
             
-            console.log('Mouse coords:', this.mouse.x, this.mouse.y);
+            console.log('Mouse coords:', mouse.x, mouse.y);
             
-            // Create a temporary raycaster for this specific click
+            // Create a raycaster for this specific click
             const raycaster = new THREE.Raycaster();
-            raycaster.setFromCamera(this.mouse, this.camera);
+            raycaster.setFromCamera(mouse, this.camera);
             
-            // Simplified approach - just use the earth and clouds directly
-            // This is more reliable than traversing the entire scene
-            const objectsToCheck = [];
-            if (this.earth) objectsToCheck.push(this.earth);
-            if (this.clouds) objectsToCheck.push(this.clouds);
+            // Make sure Earth exists
+            if (!this.earth) {
+                console.error('Earth mesh not found for raycasting');
+                return;
+            }
             
-            // Intersect with any target object
-            const intersects = raycaster.intersectObjects(objectsToCheck);
+            // Debug: List all objects in the scene to verify Earth is there
+            console.log('Scene contains these objects:');
+            this.scene.traverse(object => {
+                if (object.isMesh) {
+                    console.log(' - Mesh:', object.name || 'unnamed mesh', object.uuid);
+                }
+            });
+            
+            // Try to get direct reference to Earth mesh first
+            let earthMesh = this.earth;
+            
+            // Check if Earth is complex with child objects
+            if (this.earth.children && this.earth.children.length > 0) {
+                // Try to find the main sphere mesh
+                this.earth.traverse(object => {
+                    if (object.isMesh && object.geometry && 
+                        object.geometry.type === 'SphereGeometry') {
+                        earthMesh = object;
+                    }
+                });
+            }
+            
+            console.log('Using Earth mesh for intersection:', earthMesh.uuid);
+            
+            // Intersect only with the Earth mesh
+            const intersects = raycaster.intersectObject(earthMesh, false);
             console.log('Intersections found:', intersects.length);
             
-            // If something was clicked
+            // If Earth was clicked
             if (intersects.length > 0) {
                 // Get the intersection point and normalize to get direction from center
                 const point = intersects[0].point.clone().normalize();
@@ -1655,7 +1993,7 @@ class EarthVisualizer {
                 const lat = Math.asin(point.y) * (180 / Math.PI);
                 const lng = Math.atan2(point.z, point.x) * (180 / Math.PI);
                 
-                console.log('Clicked position:', lat, lng);
+                console.log('Clicked position:', lat.toFixed(4), lng.toFixed(4));
                 
                 // Set the start marker at the clicked location
                 this.setMarkerPosition('start-marker', lat, lng, true);
@@ -1683,7 +2021,86 @@ class EarthVisualizer {
                 
                 return true;
             } else {
-                console.log('No intersection with Earth objects');
+                console.log('No intersection with Earth mesh - trying with clouds or entire scene');
+                
+                // Try clouds next
+                if (this.clouds) {
+                    const cloudIntersects = raycaster.intersectObject(this.clouds, false);
+                    if (cloudIntersects.length > 0) {
+                        console.log('Intersection with clouds found');
+                        // Process as if Earth was clicked directly
+                        const point = cloudIntersects[0].point.clone().normalize();
+                        
+                        // Convert to latitude and longitude
+                        const lat = Math.asin(point.y) * (180 / Math.PI);
+                        const lng = Math.atan2(point.z, point.x) * (180 / Math.PI);
+                        
+                        // Set markers and dispatch event as above
+                        this.setMarkerPosition('start-marker', lat, lng, true);
+                        
+                        const antiLat = -lat;
+                        let antiLng = lng + 180;
+                        if (antiLng > 180) antiLng -= 360;
+                        
+                        this.setMarkerPosition('end-marker', antiLat, antiLng, false);
+                        
+                        const locationEvent = new CustomEvent('location-selected', {
+                            detail: {
+                                start: { lat, lng },
+                                end: { lat: antiLat, lng: antiLng }
+                            }
+                        });
+                        this.container.dispatchEvent(locationEvent);
+                        
+                        // Show feedback
+                        this.showClickFeedback(cloudIntersects[0].point);
+                        return true;
+                    }
+                }
+                
+                // Last resort: try all objects in the scene
+                const allIntersects = raycaster.intersectObjects(this.scene.children, true);
+                console.log('All scene intersections:', allIntersects.length);
+                
+                if (allIntersects.length > 0) {
+                    // Filter to only consider objects that could be the Earth or clouds
+                    const validIntersects = allIntersects.filter(i => {
+                        return i.object.geometry && 
+                               i.object.geometry.type === 'SphereGeometry';
+                    });
+                    
+                    if (validIntersects.length > 0) {
+                        console.log('Found valid intersection with a sphere in scene');
+                        const point = validIntersects[0].point.clone().normalize();
+                        
+                        // Process as above
+                        const lat = Math.asin(point.y) * (180 / Math.PI);
+                        const lng = Math.atan2(point.z, point.x) * (180 / Math.PI);
+                        
+                        // Set markers and dispatch
+                        this.setMarkerPosition('start-marker', lat, lng, true);
+                        
+                        const antiLat = -lat;
+                        let antiLng = lng + 180;
+                        if (antiLng > 180) antiLng -= 360;
+                        
+                        this.setMarkerPosition('end-marker', antiLat, antiLng, false);
+                        
+                        const locationEvent = new CustomEvent('location-selected', {
+                            detail: {
+                                start: { lat, lng },
+                                end: { lat: antiLat, lng: antiLng }
+                            }
+                        });
+                        this.container.dispatchEvent(locationEvent);
+                        
+                        // Show feedback
+                        this.showClickFeedback(validIntersects[0].point);
+                        return true;
+                    }
+                }
+                
+                console.log('No valid intersection found');
                 return false;
             }
         });
@@ -1693,18 +2110,20 @@ class EarthVisualizer {
             if (this.isAnimating) return;
             
             const rect = this.renderer.domElement.getBoundingClientRect();
-            this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-            this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            const mouse = new THREE.Vector2();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
             
             // Use simplified approach for hover detection too
             const raycaster = new THREE.Raycaster();
-            raycaster.setFromCamera(this.mouse, this.camera);
+            raycaster.setFromCamera(mouse, this.camera);
             
+            // Intersect with all objects that could be considered "Earth"
             const objectsToCheck = [];
             if (this.earth) objectsToCheck.push(this.earth);
             if (this.clouds) objectsToCheck.push(this.clouds);
             
-            const intersects = raycaster.intersectObjects(objectsToCheck);
+            const intersects = raycaster.intersectObjects(objectsToCheck, true);
             
             if (intersects.length > 0) {
                 this.renderer.domElement.style.cursor = 'pointer';
