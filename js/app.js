@@ -1,10 +1,12 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // Initialize Earth visualization
-    const earthVisualization = new EarthVisualizer(document.getElementById('earth-container'));
+    // Initialize Earth visualization with the correct container
+    const earthContainer = document.querySelector('.earth-visualization');
+    const earthVisualization = new EarthVisualizer(earthContainer);
     
     // DOM elements
     const locationInput = document.getElementById('location-input');
     const locateButton = document.getElementById('locate-btn');
+    const currentLocationButton = document.getElementById('current-location-btn');
     const digButton = document.getElementById('dig-btn');
     const resetButton = document.getElementById('reset-btn');
     const startCoords = document.getElementById('start-coords');
@@ -22,13 +24,13 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (focusStartButton) {
         focusStartButton.addEventListener('click', () => {
-            earthVisualization.focusOnMarker('start');
+            earthVisualization.focusOnMarker('start-marker');
         });
     }
     
     if (focusEndButton) {
         focusEndButton.addEventListener('click', () => {
-            earthVisualization.focusOnMarker('end');
+            earthVisualization.focusOnMarker('end-marker');
         });
     }
     
@@ -40,18 +42,57 @@ document.addEventListener('DOMContentLoaded', () => {
     earthVisualization.progressBar = progressBar;
     earthVisualization.statusText = statusMessage;
     
+    // Current location button handler
+    currentLocationButton.addEventListener('click', () => {
+        // Show loading state
+        currentLocationButton.disabled = true;
+        currentLocationButton.innerHTML = '<span>📍</span> Getting location...';
+        
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                // Success callback
+                async (position) => {
+                    startLocation = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude
+                    };
+                    await processLocation();
+                    currentLocationButton.innerHTML = '<span>📍</span> Use My Current Location';
+                    currentLocationButton.disabled = false;
+                },
+                // Error callback
+                (error) => {
+                    console.error('Geolocation error:', error);
+                    alert('Unable to get your location. Please enter a location manually.');
+                    currentLocationButton.innerHTML = '<span>📍</span> Use My Current Location';
+                    currentLocationButton.disabled = false;
+                },
+                // Options
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                }
+            );
+        } else {
+            alert('Geolocation is not supported by your browser. Please enter a location manually.');
+            currentLocationButton.innerHTML = '<span>📍</span> Use My Current Location';
+            currentLocationButton.disabled = false;
+        }
+    });
+    
     // Location input handling
     locateButton.addEventListener('click', async () => {
         const query = locationInput.value.trim();
         
         if (!query) {
-            alert('Please enter a location');
+            alert('Please enter a location or use the current location button');
             return;
         }
         
         try {
             // Show loading state
-            locateButton.textContent = 'Locating...';
+            locateButton.textContent = 'Searching...';
             locateButton.disabled = true;
             
             // Check if it's coordinates format (lat, lng)
@@ -71,18 +112,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } else {
                 // Use geocoding API to find location
-                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`);
-                const data = await response.json();
-                
-                if (data && data.length > 0) {
-                    const result = data[0];
-                    startLocation = {
-                        lat: parseFloat(result.lat),
-                        lng: parseFloat(result.lon)
-                    };
-                    await processLocation();
-                } else {
-                    alert('Location not found. Please try a different search term.');
+                try {
+                    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`);
+                    const data = await response.json();
+                    
+                    if (data && data.length > 0) {
+                        const result = data[0];
+                        startLocation = {
+                            lat: parseFloat(result.lat),
+                            lng: parseFloat(result.lon)
+                        };
+                        await processLocation();
+                    } else {
+                        alert('Location not found. Please try a different search term.');
+                    }
+                } catch (error) {
+                    console.error('Geocoding API error:', error);
+                    alert('Error connecting to location service. Please check your internet connection and try again.');
                 }
             }
         } catch (error) {
@@ -90,7 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('There was an error locating your position. Please try again.');
         } finally {
             // Reset button state
-            locateButton.textContent = 'Locate Me';
+            locateButton.textContent = 'Search';
             locateButton.disabled = false;
         }
     });

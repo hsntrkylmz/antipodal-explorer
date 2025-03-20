@@ -461,24 +461,23 @@ class EarthVisualizer {
         
         // Create a curve through the Earth
         const points = [];
-        const segments = 60; // More segments for smoother curve
+        const segments = 50; // Reduced for better performance
         
         // Add points for a curved path through the Earth
         for (let i = 0; i <= segments; i++) {
             const t = i / segments;
             
             // Create a curved path that goes through the center of the Earth
-            // Use a quadratic curve for a more natural drilling path
             if (i <= segments / 2) {
                 // First half: from start to center
                 const segmentT = i / (segments / 2);
                 // Curve downward toward center
                 const point = new THREE.Vector3();
                 
-                // Quadratic interpolation: start -> center
-                point.x = (1 - segmentT) * (1 - segmentT) * startPos.x + 2 * (1 - segmentT) * segmentT * 0 + segmentT * segmentT * 0;
-                point.y = (1 - segmentT) * (1 - segmentT) * startPos.y + 2 * (1 - segmentT) * segmentT * 0 + segmentT * segmentT * 0;
-                point.z = (1 - segmentT) * (1 - segmentT) * startPos.z + 2 * (1 - segmentT) * segmentT * 0 + segmentT * segmentT * 0;
+                // Linear interpolation to center
+                point.x = (1 - segmentT) * startPos.x;
+                point.y = (1 - segmentT) * startPos.y;
+                point.z = (1 - segmentT) * startPos.z;
                 
                 points.push(point);
             } else {
@@ -486,10 +485,10 @@ class EarthVisualizer {
                 const segmentT = (i - segments / 2) / (segments / 2);
                 const point = new THREE.Vector3();
                 
-                // Quadratic interpolation: center -> end
-                point.x = (1 - segmentT) * (1 - segmentT) * 0 + 2 * (1 - segmentT) * segmentT * 0 + segmentT * segmentT * endPos.x;
-                point.y = (1 - segmentT) * (1 - segmentT) * 0 + 2 * (1 - segmentT) * segmentT * 0 + segmentT * segmentT * endPos.y;
-                point.z = (1 - segmentT) * (1 - segmentT) * 0 + 2 * (1 - segmentT) * segmentT * 0 + segmentT * segmentT * endPos.z;
+                // Linear interpolation from center
+                point.x = segmentT * endPos.x;
+                point.y = segmentT * endPos.y;
+                point.z = segmentT * endPos.z;
                 
                 points.push(point);
             }
@@ -498,59 +497,40 @@ class EarthVisualizer {
         // Create the path group
         const pathGroup = new THREE.Group();
         
-        // Create a tube geometry for a more realistic tunnel effect
+        // Create a tube geometry for a tunnel effect
         const curve = new THREE.CatmullRomCurve3(points);
-        const tubeGeometry = new THREE.TubeGeometry(curve, segments, 2.0, 12, false);
+        const tubeGeometry = new THREE.TubeGeometry(curve, segments, 2.5, 8, false);
         
         // Create a glowing tunnel material
         const tubeMaterial = new THREE.MeshPhongMaterial({
             color: 0xffcc00,
             transparent: true,
-            opacity: 0.6,
+            opacity: 0.7,
             side: THREE.DoubleSide,
             emissive: 0xffff00,
-            emissiveIntensity: 0.4,
-            shininess: 30
+            emissiveIntensity: 0.5
         });
         
         const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
         pathGroup.add(tube);
         
-        // Add inner tube for more glow effect
-        const innerTubeGeometry = new THREE.TubeGeometry(curve, segments, 1.0, 8, false);
-        const innerTubeMaterial = new THREE.MeshBasicMaterial({
-            color: 0xffffff,
-            transparent: true,
-            opacity: 0.4,
-            side: THREE.BackSide,
-        });
-        
-        const innerTube = new THREE.Mesh(innerTubeGeometry, innerTubeMaterial);
-        pathGroup.add(innerTube);
-        
         // Add dotted line for better visibility
         const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
         const lineMaterial = new THREE.LineDashedMaterial({
             color: 0xffffff,
-            dashSize: 5,
-            gapSize: 3,
-            linewidth: 2
+            dashSize: 3,
+            gapSize: 1,
+            linewidth: 1
         });
         
         const line = new THREE.Line(lineGeometry, lineMaterial);
         line.computeLineDistances(); // Required for dashed lines
         pathGroup.add(line);
         
-        // Add glow effect at key points along the path
-        const glowPoints = [
-            0, // Start
-            Math.floor(segments * 0.25), // Quarter way
-            Math.floor(segments * 0.5), // Middle
-            Math.floor(segments * 0.75), // Three quarters
-            segments // End
-        ];
+        // Add key glow points at start, middle, and end
+        const keyPoints = [0, Math.floor(segments/2), segments];
         
-        glowPoints.forEach(index => {
+        keyPoints.forEach(index => {
             if (index < points.length) {
                 const glowGeometry = new THREE.SphereGeometry(3, 16, 16);
                 const glowMaterial = new THREE.MeshBasicMaterial({
