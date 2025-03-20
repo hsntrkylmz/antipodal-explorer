@@ -73,15 +73,8 @@ class EarthVisualizer {
             
             this.container.appendChild(this.renderer.domElement);
             
-            // Add OrbitControls for manual rotation
-            this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
-            this.controls.enableDamping = true;
-            this.controls.dampingFactor = 0.05;
-            this.controls.enableZoom = true;
-            this.controls.minDistance = 150;
-            this.controls.maxDistance = 500;
-            this.controls.rotateSpeed = 0.5;
-            this.controls.enabled = false; // Initially disabled until location is selected
+            // Initialize controls
+            this.initControls();
             
             // Improved lighting for better realism
             // Ambient light (overall illumination)
@@ -121,6 +114,21 @@ class EarthVisualizer {
                 </div>
             `;
         }
+    }
+    
+    // Initialize controls
+    initControls() {
+        // Setup OrbitControls
+        this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.enableDamping = true; // An animation loop is required when either damping or auto-rotation is enabled
+        this.controls.dampingFactor = 0.05;
+        this.controls.screenSpacePanning = false;
+        this.controls.minDistance = 120;
+        this.controls.maxDistance = 500;
+        this.controls.maxPolarAngle = Math.PI;
+        // this.controls.enabled = false; // Initially disabled
+        this.controls.autoRotate = true; // Auto-rotation for an interactive feel
+        this.controls.autoRotateSpeed = 0.5; // Slower rotation
     }
     
     // Create a realistic Earth with actual texture maps
@@ -334,35 +342,30 @@ class EarthVisualizer {
         // Store reference and add to scene
         if (markerID === 'start-marker') {
             this.startMarker = markerGroup;
+            
+            // Only focus on starting point marker
+            if (shouldFocus) {
+                this.focusOnLocation(position, 1500);
+            }
         } else {
             this.endMarker = markerGroup;
+            // Don't automatically focus on end marker until animation
         }
         
         this.scene.add(markerGroup);
-        
-        // When we set the first marker (start location), enable controls
-        if (markerID === 'start-marker') {
-            // Initially enable controls for user interaction
-            this.toggleAutoRotation(true);
-        }
-        
-        // Focus camera on the marker location if requested
-        if (shouldFocus) {
-            this.focusOnLocation(position, 1500);
-        }
         
         return position;
     }
     
     // Focus camera on a specific location on the globe
-    focusOnLocation(position, duration = 1000) {
+    focusOnLocation(position, duration = 1000, callback) {
         // Calculate an optimal camera position to view this location
         const cameraDirection = position.clone().normalize();
         const cameraDistance = this.earthRadius * 1.8; // Distance from Earth center
         const targetCameraPosition = cameraDirection.multiplyScalar(cameraDistance);
         
         // Zoom to this position
-        this.animateCameraTo(targetCameraPosition, new THREE.Vector3(0, 0, 0), duration);
+        this.animateCameraTo(targetCameraPosition, new THREE.Vector3(0, 0, 0), duration, callback);
         
         // Temporarily disable controls during animation
         const controlsWereEnabled = this.controls.enabled;
@@ -376,7 +379,64 @@ class EarthVisualizer {
         }
     }
     
-    // Easing function for smoother animations
+    // Animate camera to a position and lookAt target
+    animateCameraTo(targetPosition, targetLookAt, duration = 1000, callback) {
+        const startPosition = this.camera.position.clone();
+        const startRotation = this.camera.quaternion.clone();
+        
+        // Store the start time
+        const startTime = Date.now();
+        
+        // Calculate end rotation
+        const endQuat = new THREE.Quaternion();
+        const tempCamera = this.camera.clone();
+        tempCamera.position.copy(targetPosition);
+        tempCamera.lookAt(targetLookAt);
+        endQuat.copy(tempCamera.quaternion);
+        
+        // Disable controls during camera animation
+        if (this.controls) {
+            this.controls.enabled = false;
+        }
+        
+        // Animation function
+        const updateCamera = () => {
+            const now = Date.now();
+            const elapsed = now - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            // Use easing function for smoother animation
+            const ease = this.easeInOutCubic(progress);
+            
+            // Interpolate position
+            this.camera.position.lerpVectors(startPosition, targetPosition, ease);
+            
+            // Interpolate rotation using quaternion slerp
+            this.camera.quaternion.slerpQuaternions(startRotation, endQuat, ease);
+            
+            // Continue animation if not complete
+            if (progress < 1) {
+                requestAnimationFrame(updateCamera);
+            } else {
+                // Re-enable controls after animation
+                if (this.controls) {
+                    setTimeout(() => {
+                        this.controls.enabled = true;
+                    }, 100);
+                }
+                
+                // Call the callback function if provided
+                if (callback && typeof callback === 'function') {
+                    callback();
+                }
+            }
+        };
+        
+        // Start animation
+        updateCamera();
+    }
+    
+    // Helper function for camera transitions (cubic easing function)
     easeInOutCubic(t) {
         return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
     }
@@ -396,7 +456,7 @@ class EarthVisualizer {
         
         // Create a curve through the Earth
         const points = [];
-        const segments = 40; // More segments for smoother curve
+        const segments = 60; // More segments for smoother curve
         
         // Add points for a curved path through the Earth
         for (let i = 0; i <= segments; i++) {
@@ -408,7 +468,6 @@ class EarthVisualizer {
                 // First half: from start to center
                 const segmentT = i / (segments / 2);
                 // Curve downward toward center
-                const centerPoint = new THREE.Vector3(0, 0, 0);
                 const point = new THREE.Vector3();
                 
                 // Quadratic interpolation: start -> center
@@ -436,31 +495,70 @@ class EarthVisualizer {
         
         // Create a tube geometry for a more realistic tunnel effect
         const curve = new THREE.CatmullRomCurve3(points);
-        const tubeGeometry = new THREE.TubeGeometry(curve, segments, 1.5, 8, false);
+        const tubeGeometry = new THREE.TubeGeometry(curve, segments, 2.0, 12, false);
+        
+        // Create a glowing tunnel material
         const tubeMaterial = new THREE.MeshPhongMaterial({
-            color: 0xffff00,
+            color: 0xffcc00,
             transparent: true,
             opacity: 0.6,
             side: THREE.DoubleSide,
             emissive: 0xffff00,
-            emissiveIntensity: 0.3
+            emissiveIntensity: 0.4,
+            shininess: 30
         });
         
         const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
         pathGroup.add(tube);
         
+        // Add inner tube for more glow effect
+        const innerTubeGeometry = new THREE.TubeGeometry(curve, segments, 1.0, 8, false);
+        const innerTubeMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.4,
+            side: THREE.BackSide,
+        });
+        
+        const innerTube = new THREE.Mesh(innerTubeGeometry, innerTubeMaterial);
+        pathGroup.add(innerTube);
+        
         // Add dotted line for better visibility
         const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
         const lineMaterial = new THREE.LineDashedMaterial({
             color: 0xffffff,
-            dashSize: 3,
-            gapSize: 1,
+            dashSize: 5,
+            gapSize: 3,
             linewidth: 2
         });
         
         const line = new THREE.Line(lineGeometry, lineMaterial);
         line.computeLineDistances(); // Required for dashed lines
         pathGroup.add(line);
+        
+        // Add glow effect at key points along the path
+        const glowPoints = [
+            0, // Start
+            Math.floor(segments * 0.25), // Quarter way
+            Math.floor(segments * 0.5), // Middle
+            Math.floor(segments * 0.75), // Three quarters
+            segments // End
+        ];
+        
+        glowPoints.forEach(index => {
+            if (index < points.length) {
+                const glowGeometry = new THREE.SphereGeometry(3, 16, 16);
+                const glowMaterial = new THREE.MeshBasicMaterial({
+                    color: 0xffff00,
+                    transparent: true,
+                    opacity: 0.7
+                });
+                
+                const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+                glow.position.copy(points[index]);
+                pathGroup.add(glow);
+            }
+        });
         
         // Store and add to scene
         this.digLine = pathGroup;
@@ -469,222 +567,262 @@ class EarthVisualizer {
         return points;
     }
     
-    // Start the digging journey animation
+    // Animate the journey through Earth
     startJourneyAnimation(startLat, startLng, endLat, endLng) {
-        this.log('Starting journey animation');
+        this.log(`Starting journey animation from (${startLat}, ${startLng}) to (${endLat}, ${endLng})`);
         
-        if (this.isAnimating) {
-            this.log('Animation already in progress');
-            return;
-        }
-        
+        // Set animation state to active
         this.isAnimating = true;
         
-        // Set markers without automatic focusing (we'll control camera manually)
-        this.setMarkerPosition('start-marker', startLat, startLng, false);
-        this.setMarkerPosition('end-marker', endLat, endLng, false);
+        // Create the dig path first for better visualization
+        const points = this.drawDigPath(startLat, startLng, endLat, endLng);
+        
+        // Store camera position for restoration later
+        this.initialCameraPosition = this.camera.position.clone();
+        this.initialCameraQuaternion = this.camera.quaternion.clone();
         
         // Disable controls during animation
-        const controlsWereEnabled = this.controls.enabled;
-        this.controls.enabled = false;
+        if (this.controls) {
+            this.controls.enabled = false;
+        }
         
-        // Store camera position for later restoration
-        const initialCameraPosition = this.camera.position.clone();
-        const initialCameraQuaternion = this.camera.quaternion.clone();
+        // Stop auto-rotation
+        this.autoRotate = false;
+        this.controls.autoRotate = false;
         
-        // Get start and end positions
-        const startPos = this.latLngTo3d(startLat, startLng, this.earthRadius);
-        const endPos = this.latLngTo3d(endLat, endLng, this.earthRadius);
-        
-        // Draw dig path
-        const pathPoints = this.drawDigPath(startLat, startLng, endLat, endLng);
-        
-        // First focus on the start position
-        this.focusOnLocation(startPos.clone().multiplyScalar(1.05), 1500);
-        
-        // Wait for initial focus to complete before starting journey
-        setTimeout(() => {
-            // Create a traveling sphere that moves along the path
-            const travellerGeometry = new THREE.SphereGeometry(3, 32, 32);
-            const travellerMaterial = new THREE.MeshPhongMaterial({
-                color: 0xffff00,
-                emissive: 0xffff00,
-                emissiveIntensity: 0.7,
-                shininess: 20
-            });
+        // First, focus on the start position before beginning the journey
+        this.focusOnLocation(this.latLngTo3d(startLat, startLng, this.earthRadius), 1500, () => {
+            // Update UI message
+            this.updateStatusMessage("Beginning to dig...");
             
-            const traveller = new THREE.Mesh(travellerGeometry, travellerMaterial);
-            this.scene.add(traveller);
+            // Create a traveling sphere to represent our journey
+            this.createTraveler();
             
-            // Add a glowing trail behind the traveller
-            const trailGeometry = new THREE.SphereGeometry(2, 16, 16);
-            const trailMaterial = new THREE.MeshBasicMaterial({
-                color: 0xffff00,
-                transparent: true,
-                opacity: 0.7
-            });
-            
-            // Store trails for animation
-            const trails = [];
-            const maxTrails = 10;
-            
-            // Start at the beginning of the path
+            // Path animation variables
             let pathIndex = 0;
-            if (pathPoints[0]) {
-                traveller.position.copy(pathPoints[0]);
+            const pathSpeed = 60 / points.length; // Complete journey in about 60 frames
+            let trailPoints = [];
+            let lastTrailAddTime = 0;
+            
+            // Create a group for trails
+            if (!this.trailGroup) {
+                this.trailGroup = new THREE.Group();
+                this.scene.add(this.trailGroup);
+            } else {
+                // Clear existing trails
+                while (this.trailGroup.children.length) {
+                    const trail = this.trailGroup.children[0];
+                    trail.geometry.dispose();
+                    trail.material.dispose();
+                    this.trailGroup.remove(trail);
+                }
             }
             
-            // Update UI
-            if (this.progressBar) this.progressBar.style.width = '0%';
-            if (this.statusText) this.statusText.textContent = 'Starting to dig...';
-            
-            // Animation function
-            const animateDigging = () => {
-                if (pathIndex >= pathPoints.length) {
-                    // Animation complete
-                    setTimeout(() => {
-                        // Remove traveller and trails
-                        this.scene.remove(traveller);
-                        trails.forEach(trail => this.scene.remove(trail));
+            // Animation function for the journey
+            const animateJourney = () => {
+                if (!this.isAnimating) return;
+                
+                // Update path position
+                if (pathIndex < points.length) {
+                    // Update traveler position
+                    if (this.traveler) {
+                        this.traveler.position.copy(points[pathIndex]);
+                    }
+                    
+                    // Add trail point periodically
+                    const now = Date.now();
+                    if (now - lastTrailAddTime > 100) { // Add a trail point every 100ms
+                        lastTrailAddTime = now;
+                        trailPoints.push(points[pathIndex].clone());
+                        
+                        // Update trail visualization
+                        if (trailPoints.length > 1) {
+                            this.updateTrail(trailPoints);
+                        }
+                    }
+                    
+                    // Update UI message based on journey progress
+                    const progress = Math.floor((pathIndex / points.length) * 100);
+                    
+                    if (progress < 10) {
+                        this.updateStatusMessage("Drilling through the Earth's crust...");
+                    } else if (progress < 30) {
+                        this.updateStatusMessage("Passing through the upper mantle...");
+                    } else if (progress < 45) {
+                        this.updateStatusMessage("Traveling through the lower mantle...");
+                    } else if (progress < 50) {
+                        this.updateStatusMessage("Approaching the outer core...");
+                    } else if (progress === 50) {
+                        this.updateStatusMessage("Reached the Earth's core!");
+                        
+                        // At the center, pause briefly and take a wider view
+                        this.animateCameraToPosition(
+                            new THREE.Vector3(0, 0, 350), // Move camera out for a wider view
+                            1000, // Duration
+                            () => {
+                                // Continue journey after pause
+                                setTimeout(() => {
+                                    this.updateStatusMessage("Continuing journey through the inner core...");
+                                }, 500);
+                            }
+                        );
+                    } else if (progress < 70) {
+                        this.updateStatusMessage("Leaving the Earth's core...");
+                    } else if (progress < 90) {
+                        this.updateStatusMessage("Passing through the lower mantle...");
+                    } else {
+                        this.updateStatusMessage("Almost there! Drilling through the crust...");
+                    }
+                    
+                    // Camera animation at key points
+                    if (pathIndex === Math.floor(points.length * 0.25)) {
+                        // Quarter way - show the Earth's interior
+                        const targetPosition = points[pathIndex].clone().multiplyScalar(1.5);
+                        this.animateCameraToPosition(targetPosition, 1000);
+                    } else if (pathIndex === Math.floor(points.length * 0.5)) {
+                        // Half way - at the center
+                        const targetPosition = new THREE.Vector3(0, 0, 200);
+                        this.animateCameraToPosition(targetPosition, 1000);
+                    } else if (pathIndex === Math.floor(points.length * 0.75)) {
+                        // Three quarters - preparing to emerge
+                        const targetPosition = points[pathIndex].clone().multiplyScalar(1.5);
+                        this.animateCameraToPosition(targetPosition, 1000);
+                    }
+                    
+                    // Increment path index
+                    pathIndex += pathSpeed;
+                    
+                    // Ensure we don't exceed the array length
+                    if (pathIndex >= points.length) {
+                        pathIndex = points.length - 1;
+                    }
+                    
+                    // Continue animation if not at the end
+                    if (pathIndex < points.length - 1) {
+                        requestAnimationFrame(animateJourney);
+                    } else {
+                        // At the end of the path
+                        this.updateStatusMessage("Reached destination!");
                         
                         // Focus on the destination point
-                        this.focusOnLocation(endPos.clone().multiplyScalar(1.05), 1500);
-                        
-                        // Update UI
-                        if (this.progressBar) this.progressBar.style.width = '100%';
-                        if (this.statusText) this.statusText.textContent = 'Arrived at your antipodal point!';
-                        
-                        // Show the destination info
-                        const endLocation = document.getElementById('end-location');
-                        if (endLocation) endLocation.classList.remove('hidden');
-                        
-                        const resetBtn = document.getElementById('reset-btn');
-                        if (resetBtn) resetBtn.classList.remove('hidden');
-                        
-                        // Re-enable controls after a delay
-                        setTimeout(() => {
-                            this.controls.enabled = controlsWereEnabled;
+                        const endPosition = this.latLngTo3d(endLat, endLng, this.earthRadius);
+                        this.focusOnLocation(endPosition, 1500, () => {
+                            // Enable controls after animation
+                            if (this.controls) {
+                                this.controls.enabled = true;
+                            }
+                            
+                            // Animation is complete
                             this.isAnimating = false;
-                        }, 2000);
-                        
-                    }, 500);
-                    
-                    return;
-                }
-                
-                // Update traveller position
-                traveller.position.copy(pathPoints[pathIndex]);
-                
-                // Add trail effects
-                if (pathIndex % 3 === 0 && pathIndex > 0) {
-                    const trail = new THREE.Mesh(trailGeometry, trailMaterial.clone());
-                    trail.position.copy(pathPoints[pathIndex - 1]);
-                    trail.userData.creationTime = Date.now();
-                    trail.userData.initialOpacity = 0.7;
-                    trails.push(trail);
-                    this.scene.add(trail);
-                    
-                    // Limit number of trails
-                    if (trails.length > maxTrails) {
-                        const oldestTrail = trails.shift();
-                        this.scene.remove(oldestTrail);
+                            
+                            // Show completion message
+                            this.updateStatusMessage("Journey complete! You've reached the antipodal point.");
+                            
+                            // Leave the traveler at the end position
+                            // Hide it after a few seconds
+                            setTimeout(() => {
+                                if (this.traveler) {
+                                    this.scene.remove(this.traveler);
+                                    this.traveler = null;
+                                }
+                            }, 3000);
+                        });
                     }
                 }
-                
-                // Update existing trails (fade out)
-                trails.forEach(trail => {
-                    const age = Date.now() - trail.userData.creationTime;
-                    const opacity = Math.max(0, trail.userData.initialOpacity - (age / 2000));
-                    trail.material.opacity = opacity;
-                    trail.scale.multiplyScalar(0.98); // Shrink trail over time
-                });
-                
-                // Update progress
-                const progress = Math.floor((pathIndex / (pathPoints.length - 1)) * 100);
-                if (this.progressBar) this.progressBar.style.width = `${progress}%`;
-                
-                // Update status text
-                if (this.statusText) {
-                    if (progress < 25) {
-                        this.statusText.textContent = 'Penetrating the Earth\'s crust...';
-                    } else if (progress < 50) {
-                        this.statusText.textContent = 'Passing through the mantle...';
-                    } else if (progress < 75) {
-                        this.statusText.textContent = 'Crossing through the core...';
-                    } else {
-                        this.statusText.textContent = 'Approaching the surface...';
-                    }
-                }
-                
-                // Camera follows journey at key points
-                // First quarter: look at interior
-                if (pathIndex === Math.floor(pathPoints.length * 0.25)) {
-                    const targetPos = pathPoints[Math.floor(pathPoints.length * 0.5)].clone();
-                    const cameraPos = new THREE.Vector3().subVectors(targetPos, pathPoints[pathIndex]).normalize();
-                    cameraPos.multiplyScalar(this.earthRadius * 0.8).add(targetPos);
-                    
-                    this.animateCameraTo(cameraPos, new THREE.Vector3(0, 0, 0), 3000);
-                }
-                // At Earth center: begin moving toward destination
-                else if (pathIndex === Math.floor(pathPoints.length * 0.5)) {
-                    const endDirection = endPos.clone().normalize();
-                    const cameraDist = this.earthRadius * 0.8;
-                    const cameraOffset = endDirection.clone().multiplyScalar(-cameraDist);
-                    
-                    this.animateCameraTo(cameraOffset, new THREE.Vector3(0, 0, 0), 3000);
-                }
-                // Three-quarter point: prepare to emerge
-                else if (pathIndex === Math.floor(pathPoints.length * 0.75)) {
-                    const endDirection = endPos.clone().normalize();
-                    const cameraOffset = endDirection.clone().multiplyScalar(-this.earthRadius * 1.2);
-                    
-                    this.animateCameraTo(cameraOffset, endPos, 2000);
-                }
-                
-                // Increment path index
-                pathIndex++;
-                
-                // Continue animation
-                setTimeout(animateDigging, 120);
             };
             
-            // Start animation after a delay to allow initial camera focus
-            setTimeout(animateDigging, 1800);
-            
-        }, 1800); // Wait for initial camera movement to complete
+            // Start the journey animation
+            animateJourney();
+        });
     }
     
-    // Animate camera to a position and lookAt target
-    animateCameraTo(targetPosition, targetLookAt, duration = 1000) {
-        const startPosition = this.camera.position.clone();
-        const startRotation = this.camera.quaternion.clone();
+    // Create a traveling sphere to represent our journey
+    createTraveler() {
+        // Remove existing traveler if any
+        if (this.traveler) {
+            this.scene.remove(this.traveler);
+        }
         
-        // Create a dummy camera to calculate the target rotation
-        const dummyCamera = this.camera.clone();
-        dummyCamera.position.copy(targetPosition);
-        dummyCamera.lookAt(targetLookAt);
-        const targetRotation = dummyCamera.quaternion.clone();
+        const travelerGeometry = new THREE.SphereGeometry(3.5, 32, 32);
+        const travelerMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0xffff00,
+            transparent: true,
+            opacity: 0.9
+        });
         
-        const startTime = Date.now();
+        this.traveler = new THREE.Mesh(travelerGeometry, travelerMaterial);
         
-        const updateCamera = () => {
-            const elapsed = Date.now() - startTime;
-            const progress = Math.min(1, elapsed / duration);
-            const easedProgress = this.easeInOutCubic(progress);
+        // Add glow effect
+        const glowGeometry = new THREE.SphereGeometry(5, 32, 32);
+        const glowMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                c: { type: "f", value: 0.3 },
+                p: { type: "f", value: 5.0 },
+                glowColor: { type: "c", value: new THREE.Color(0xffff00) },
+                viewVector: { type: "v3", value: this.camera.position }
+            },
+            vertexShader: `
+                uniform vec3 viewVector;
+                uniform float c;
+                uniform float p;
+                varying float intensity;
+                void main() {
+                    vec3 vNormal = normalize(normal);
+                    vec3 vNormel = normalize(viewVector);
+                    intensity = pow(c - dot(vNormal, vNormel), p);
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform vec3 glowColor;
+                varying float intensity;
+                void main() {
+                    gl_FragColor = vec4(glowColor, 1.0) * intensity;
+                }
+            `,
+            side: THREE.BackSide,
+            blending: THREE.AdditiveBlending,
+            transparent: true
+        });
+        
+        const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+        this.traveler.add(glow);
+        
+        this.scene.add(this.traveler);
+        return this.traveler;
+    }
+    
+    // Update the trail visualization
+    updateTrail(points) {
+        // Remove old trail
+        for (let i = this.trailGroup.children.length - 1; i >= 0; i--) {
+            const trail = this.trailGroup.children[i];
+            this.trailGroup.remove(trail);
+            trail.geometry.dispose();
+            trail.material.dispose();
+        }
+        
+        // Create new trail with current points
+        if (points.length > 1) {
+            const trailGeometry = new THREE.BufferGeometry().setFromPoints(points);
+            const trailMaterial = new THREE.LineBasicMaterial({ 
+                color: 0x00ffff, 
+                transparent: true, 
+                opacity: 0.7,
+                linewidth: 2,
+            });
             
-            // Interpolate position
-            this.camera.position.lerpVectors(startPosition, targetPosition, easedProgress);
-            
-            // Interpolate rotation using quaternions
-            THREE.Quaternion.slerp(startRotation, targetRotation, this.camera.quaternion, easedProgress);
-            
-            // Continue animation if not complete
-            if (progress < 1) {
-                requestAnimationFrame(updateCamera);
-            }
-        };
-        
-        updateCamera();
+            const trail = new THREE.Line(trailGeometry, trailMaterial);
+            this.trailGroup.add(trail);
+        }
+    }
+    
+    // Update UI status message
+    updateStatusMessage(message) {
+        const statusEl = document.getElementById('status-message');
+        if (statusEl) {
+            statusEl.textContent = message;
+        }
     }
     
     // Animation loop
@@ -780,6 +918,42 @@ class EarthVisualizer {
         if (this.controls) {
             this.toggleAutoRotation(false);
         }
+    }
+    
+    // Animate camera to specific position
+    animateCameraToPosition(targetPosition, duration = 1000, callback) {
+        // Calculate target look at (always look at Earth center)
+        const targetLookAt = new THREE.Vector3(0, 0, 0);
+        
+        // Call the main camera animation function
+        this.animateCameraTo(targetPosition, targetLookAt, duration, callback);
+    }
+    
+    // Focus on a specific marker (start or end)
+    focusOnMarker(markerType = 'start') {
+        if (!this.startMarker && !this.endMarker) {
+            this.log('No markers to focus on');
+            return;
+        }
+        
+        let markerPosition;
+        
+        if (markerType === 'start' && this.startMarker) {
+            markerPosition = this.startMarker.position.clone();
+        } else if (markerType === 'end' && this.endMarker) {
+            markerPosition = this.endMarker.position.clone();
+        } else {
+            // Fallback to whatever marker exists
+            markerPosition = (this.startMarker || this.endMarker).position.clone();
+        }
+        
+        // Scale the position out slightly to get a good view
+        const scaledPosition = markerPosition.clone().multiplyScalar(1.5);
+        
+        // Animate camera to this position
+        this.animateCameraToPosition(scaledPosition, 1500, () => {
+            this.log(`Focused on ${markerType} marker`);
+        });
     }
 }
 

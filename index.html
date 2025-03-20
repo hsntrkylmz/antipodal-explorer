@@ -75,9 +75,41 @@
             </div>
 
             <div class="info-panel">
-                <h2>About Antipodal Points</h2>
-                <p>An antipodal point is the point on the Earth's surface that is diametrically opposite to a given point. It's the place you would reach if you could tunnel straight through the center of the Earth.</p>
-                <p>Most antipodal points from land end up in the ocean, as land makes up only about 29% of Earth's surface.</p>
+                <h1>Antipodal Explorer</h1>
+                <p>Find out where you'd end up if you dug straight through the center of the Earth!</p>
+                
+                <div class="location-form">
+                    <div class="search-container">
+                        <input type="text" id="location-input" placeholder="Enter your location">
+                        <button id="locate-btn">Locate Me</button>
+                    </div>
+                    
+                    <div id="start-location" class="location-info">
+                        <h3>Your Location:</h3>
+                        <p id="start-coords">Not set</p>
+                        <p id="start-address">Not set</p>
+                        <button id="focus-start" class="focus-btn">Focus on Start</button>
+                    </div>
+                    
+                    <div id="end-location" class="location-info hidden">
+                        <h3>Your Antipodal Point:</h3>
+                        <p id="end-coords">Not set</p>
+                        <p id="end-address">Not set</p>
+                        <button id="focus-end" class="focus-btn">Focus on Destination</button>
+                    </div>
+                    
+                    <div id="action-buttons">
+                        <button id="dig-btn" class="primary-btn" disabled>Start Digging</button>
+                        <button id="reset-btn" class="secondary-btn hidden">Reset</button>
+                    </div>
+                    
+                    <div class="journey-status hidden">
+                        <p id="status-message">Preparing to dig...</p>
+                        <div class="progress-bar">
+                            <div class="progress"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </main>
 

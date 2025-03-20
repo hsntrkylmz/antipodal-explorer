@@ -1,333 +1,148 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // DOM Elements
-    const locationPermissionBtn = document.getElementById('location-permission-btn');
-    const startJourneyBtn = document.getElementById('start-journey-btn');
-    const resetBtn = document.getElementById('reset-btn');
-    const currentLocationDiv = document.getElementById('current-location');
-    const locationCoordinatesDiv = document.getElementById('location-coordinates');
-    const journeyAnimationDiv = document.getElementById('journey-animation');
-    const endLocationDiv = document.getElementById('end-location');
-    const locationSearchInput = document.getElementById('location-search');
-    const searchResultsDiv = document.getElementById('search-results');
+    // Initialize Earth visualization
+    const earthVisualization = new EarthVisualization(document.getElementById('earth-container'));
     
-    // Location data
-    let userLocation = null;
-    let antipodalLocation = null;
-    let searchTimeout = null;
+    // DOM elements
+    const locationInput = document.getElementById('location-input');
+    const locateButton = document.getElementById('locate-btn');
+    const digButton = document.getElementById('dig-btn');
+    const resetButton = document.getElementById('reset-btn');
+    const startCoords = document.getElementById('start-coords');
+    const startAddress = document.getElementById('start-address');
+    const endCoords = document.getElementById('end-coords');
+    const endAddress = document.getElementById('end-address');
+    const endLocation = document.getElementById('end-location');
+    const statusMessage = document.getElementById('status-message');
+    const journeyStatus = document.querySelector('.journey-status');
+    const progressBar = document.querySelector('.progress');
     
-    // Initialize app
-    init();
+    // Add event listeners for the focus buttons
+    const focusStartButton = document.getElementById('focus-start');
+    const focusEndButton = document.getElementById('focus-end');
     
-    function init() {
-        // Add event listeners
-        locationPermissionBtn.addEventListener('click', requestLocationPermission);
-        startJourneyBtn.addEventListener('click', startJourney);
-        resetBtn.addEventListener('click', resetApp);
-        
-        // Location search listeners
-        locationSearchInput.addEventListener('input', handleSearchInput);
-        locationSearchInput.addEventListener('focus', () => {
-            if (searchResultsDiv.children.length > 0) {
-                searchResultsDiv.classList.remove('hidden');
-            }
+    if (focusStartButton) {
+        focusStartButton.addEventListener('click', () => {
+            earthVisualization.focusOnMarker('start');
         });
-        
-        // Close search results when clicking outside
-        document.addEventListener('click', (e) => {
-            if (!locationSearchInput.contains(e.target) && !searchResultsDiv.contains(e.target)) {
-                searchResultsDiv.classList.add('hidden');
-            }
-        });
-        
-        // Check if geolocation is available
-        if (!navigator.geolocation) {
-            updateLocationStatus('Geolocation is not supported by your browser');
-            locationPermissionBtn.disabled = true;
-        }
     }
     
-    // Handle search input with debounce
-    function handleSearchInput(e) {
-        const query = e.target.value.trim();
+    if (focusEndButton) {
+        focusEndButton.addEventListener('click', () => {
+            earthVisualization.focusOnMarker('end');
+        });
+    }
+    
+    // Store starting location
+    let startLocation = null;
+    let endLocation = null;
+    
+    // Connect UI elements
+    earthVisualization.statusText = statusMessage;
+    earthVisualization.progressBar = progressBar;
+    
+    // Location input handling
+    locateButton.addEventListener('click', async () => {
+        const query = locationInput.value.trim();
         
-        // Clear previous timeout
-        if (searchTimeout) {
-            clearTimeout(searchTimeout);
-        }
-        
-        // Clear results if query is empty
-        if (query.length === 0) {
-            searchResultsDiv.innerHTML = '';
-            searchResultsDiv.classList.add('hidden');
+        if (!query) {
+            alert('Please enter a location');
             return;
         }
         
-        // Set new timeout for debounce (300ms)
-        searchTimeout = setTimeout(() => {
-            // Check if it's coordinates format
-            if (isCoordinatesFormat(query)) {
-                try {
-                    const coords = parseCoordinates(query);
-                    if (coords) {
-                        showCoordinateResult(coords);
-                    }
-                } catch (err) {
-                    console.error('Error parsing coordinates:', err);
+        try {
+            // Show loading state
+            locateButton.textContent = 'Locating...';
+            locateButton.disabled = true;
+            
+            // Check if it's coordinates format (lat, lng)
+            const coordsFormat = /^(-?\d+\.?\d*),\s*(-?\d+\.?\d*)$/;
+            const match = query.match(coordsFormat);
+            
+            if (match) {
+                // Parse as coordinates
+                const lat = parseFloat(match[1]);
+                const lng = parseFloat(match[2]);
+                
+                if (isValidCoordinates(lat, lng)) {
+                    startLocation = { lat, lng };
+                    await processLocation();
+                } else {
+                    alert('Invalid coordinates. Latitude must be between -90 and 90, longitude between -180 and 180.');
                 }
             } else {
-                // Search for locations
-                searchLocations(query);
+                // Use geocoding API to find location
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`);
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    const result = data[0];
+                    startLocation = {
+                        lat: parseFloat(result.lat),
+                        lng: parseFloat(result.lon)
+                    };
+                    await processLocation();
+                } else {
+                    alert('Location not found. Please try a different search term.');
+                }
             }
-        }, 300);
-    }
-    
-    // Check if input matches coordinates format
-    function isCoordinatesFormat(input) {
-        // Simple regex to match coordinates formats like:
-        // 40.7128, -74.0060 or 40.7128,-74.0060 or 40.7128 -74.0060
-        const coordRegex = /^-?\d+\.?\d*\s*,?\s*-?\d+\.?\d*$/;
-        return coordRegex.test(input);
-    }
-    
-    // Parse coordinates from string
-    function parseCoordinates(input) {
-        const parts = input.split(/[,\s]+/).filter(part => part.trim() !== '');
-        
-        if (parts.length !== 2) {
-            return null;
-        }
-        
-        const lat = parseFloat(parts[0]);
-        const lng = parseFloat(parts[1]);
-        
-        // Validate coordinates
-        if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-            return null;
-        }
-        
-        return { lat, lng };
-    }
-    
-    // Show coordinate result in dropdown
-    function showCoordinateResult(coords) {
-        searchResultsDiv.innerHTML = '';
-        
-        const resultItem = document.createElement('div');
-        resultItem.className = 'search-result-item';
-        resultItem.textContent = `Coordinates: ${coords.lat.toFixed(6)}, ${coords.lng.toFixed(6)}`;
-        
-        resultItem.addEventListener('click', () => {
-            selectLocation(coords);
-            searchResultsDiv.classList.add('hidden');
-            locationSearchInput.value = `${coords.lat.toFixed(6)}, ${coords.lng.toFixed(6)}`;
-        });
-        
-        searchResultsDiv.appendChild(resultItem);
-        searchResultsDiv.classList.remove('hidden');
-    }
-    
-    // Search locations using OpenStreetMap Nominatim API
-    async function searchLocations(query) {
-        try {
-            const response = await fetch(
-                `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`
-            );
-            
-            const results = await response.json();
-            displaySearchResults(results);
         } catch (error) {
-            console.error('Error searching locations:', error);
+            console.error('Error locating position:', error);
+            alert('There was an error locating your position. Please try again.');
+        } finally {
+            // Reset button state
+            locateButton.textContent = 'Locate Me';
+            locateButton.disabled = false;
         }
+    });
+    
+    // Check if coordinates are valid
+    function isValidCoordinates(lat, lng) {
+        return !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
     }
     
-    // Display search results
-    function displaySearchResults(results) {
-        searchResultsDiv.innerHTML = '';
-        
-        if (results.length === 0) {
-            const noResults = document.createElement('div');
-            noResults.className = 'search-result-item';
-            noResults.textContent = 'No results found';
-            searchResultsDiv.appendChild(noResults);
-        } else {
-            results.forEach(result => {
-                const resultItem = document.createElement('div');
-                resultItem.className = 'search-result-item';
-                
-                const coords = {
-                    lat: parseFloat(result.lat),
-                    lng: parseFloat(result.lon)
-                };
-                
-                // Format display name
-                resultItem.textContent = result.display_name;
-                
-                // Add click handler
-                resultItem.addEventListener('click', () => {
-                    selectLocation(coords);
-                    searchResultsDiv.classList.add('hidden');
-                    locationSearchInput.value = result.display_name;
-                });
-                
-                searchResultsDiv.appendChild(resultItem);
-            });
-        }
-        
-        searchResultsDiv.classList.remove('hidden');
-    }
-    
-    // Select a location from search results
-    function selectLocation(coords) {
-        userLocation = {
-            lat: coords.lat,
-            lng: coords.lng
-        };
+    // Process the located position
+    async function processLocation() {
+        if (!startLocation) return;
         
         // Calculate antipodal point
-        antipodalLocation = calculateAntipode(userLocation.lat, userLocation.lng);
+        endLocation = calculateAntipode(startLocation.lat, startLocation.lng);
         
-        // Display locations
-        displayLocationInfo(userLocation, antipodalLocation);
+        // Update UI with coordinates
+        startCoords.textContent = `${startLocation.lat.toFixed(6)}, ${startLocation.lng.toFixed(6)}`;
+        endCoords.textContent = `${endLocation.lat.toFixed(6)}, ${endLocation.lng.toFixed(6)}`;
+        
+        // Try to get address information
+        try {
+            const startAddressInfo = await reverseGeocode(startLocation.lat, startLocation.lng);
+            startAddress.textContent = startAddressInfo || 'Unknown location';
+            
+            const endAddressInfo = await reverseGeocode(endLocation.lat, endLocation.lng);
+            endAddress.textContent = endAddressInfo || 'Unknown location';
+        } catch (error) {
+            console.error('Error getting address:', error);
+            startAddress.textContent = 'Address lookup failed';
+            endAddress.textContent = 'Address lookup failed';
+        }
+        
+        // Set markers on the Earth
+        earthVisualization.setMarkerPosition('start', startLocation.lat, startLocation.lng, true);
+        earthVisualization.setMarkerPosition('end', endLocation.lat, endLocation.lng, false);
         
         // Update UI
-        currentLocationDiv.classList.add('hidden');
-        locationCoordinatesDiv.classList.remove('hidden');
-        startJourneyBtn.classList.remove('hidden');
-        
-        // Set markers on the globe
-        earthVisualizer.setMarkerPosition(
-            'start-marker', 
-            userLocation.lat, 
-            userLocation.lng
-        );
-        
-        earthVisualizer.setMarkerPosition(
-            'end-marker',
-            antipodalLocation.lat,
-            antipodalLocation.lng
-        );
-        
-        // Draw path
-        earthVisualizer.drawDigPath(
-            userLocation.lat, 
-            userLocation.lng,
-            antipodalLocation.lat,
-            antipodalLocation.lng
-        );
-    }
-    
-    // Request location permission
-    function requestLocationPermission() {
-        locationPermissionBtn.disabled = true;
-        locationPermissionBtn.textContent = 'Locating...';
-        
-        navigator.geolocation.getCurrentPosition(
-            position => {
-                // Success
-                userLocation = {
-                    lat: position.coords.latitude,
-                    lng: position.coords.longitude
-                };
-                
-                // Calculate antipodal point
-                antipodalLocation = calculateAntipode(userLocation.lat, userLocation.lng);
-                
-                // Display locations
-                displayLocationInfo(userLocation, antipodalLocation);
-                
-                // Update UI
-                currentLocationDiv.classList.add('hidden');
-                locationCoordinatesDiv.classList.remove('hidden');
-                startJourneyBtn.classList.remove('hidden');
-                
-                // Set markers on the globe
-                earthVisualizer.setMarkerPosition(
-                    'start-marker', 
-                    userLocation.lat, 
-                    userLocation.lng
-                );
-                
-                earthVisualizer.setMarkerPosition(
-                    'end-marker',
-                    antipodalLocation.lat,
-                    antipodalLocation.lng
-                );
-                
-                // Draw path
-                earthVisualizer.drawDigPath(
-                    userLocation.lat, 
-                    userLocation.lng,
-                    antipodalLocation.lat,
-                    antipodalLocation.lng
-                );
-            },
-            error => {
-                // Error
-                console.error('Error getting location:', error);
-                locationPermissionBtn.disabled = false;
-                locationPermissionBtn.textContent = 'Share My Location';
-                
-                let errorMessage = 'Unable to retrieve your location';
-                switch(error.code) {
-                    case error.PERMISSION_DENIED:
-                        errorMessage = 'Location access was denied';
-                        break;
-                    case error.POSITION_UNAVAILABLE:
-                        errorMessage = 'Location information is unavailable';
-                        break;
-                    case error.TIMEOUT:
-                        errorMessage = 'The request to get location timed out';
-                        break;
-                }
-                
-                updateLocationStatus(errorMessage);
-            },
-            {
-                enableHighAccuracy: true,
-                timeout: 10000,
-                maximumAge: 0
-            }
-        );
+        digButton.disabled = false;
+        endLocation.classList.remove('hidden');
     }
     
     // Calculate antipodal point (opposite side of the Earth)
     function calculateAntipode(lat, lng) {
+        // Antipode latitude is the negative of the original latitude
         const antipodalLat = -lat;
+        
+        // Antipode longitude is 180° opposite (plus or minus 180°)
         let antipodalLng = lng + 180;
+        if (antipodalLng > 180) antipodalLng -= 360;
         
-        // Normalize longitude to -180 to 180
-        if (antipodalLng > 180) {
-            antipodalLng -= 360;
-        }
-        
-        return {
-            lat: antipodalLat,
-            lng: antipodalLng
-        };
-    }
-    
-    // Display location information
-    async function displayLocationInfo(start, end) {
-        // Display start location
-        document.getElementById('start-lat').textContent = start.lat.toFixed(6);
-        document.getElementById('start-lng').textContent = start.lng.toFixed(6);
-        
-        // Display end location
-        document.getElementById('end-lat').textContent = end.lat.toFixed(6);
-        document.getElementById('end-lng').textContent = end.lng.toFixed(6);
-        
-        // Get location names using reverse geocoding
-        try {
-            const startAddress = await reverseGeocode(start.lat, start.lng);
-            const endAddress = await reverseGeocode(end.lat, end.lng);
-            
-            document.getElementById('start-address').textContent = startAddress;
-            document.getElementById('end-address').textContent = endAddress;
-        } catch (error) {
-            console.error('Error with geocoding:', error);
-            document.getElementById('start-address').textContent = 'Location name unavailable';
-            document.getElementById('end-address').textContent = 'Location name unavailable';
-        }
+        return { lat: antipodalLat, lng: antipodalLng };
     }
     
     // Reverse geocode coordinates to get location name
@@ -337,114 +152,77 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             
             if (data.error) {
-                return 'Ocean or Unknown Location';
+                // Likely ocean or uninhabited area
+                return 'Ocean or uninhabited area';
             }
             
             if (data.address) {
-                // Create location name from available address parts
+                // Construct address from components
                 const parts = [];
                 
+                // Add city, town, or village
                 if (data.address.city) parts.push(data.address.city);
                 else if (data.address.town) parts.push(data.address.town);
                 else if (data.address.village) parts.push(data.address.village);
                 
-                if (data.address.state || data.address.state_district) {
-                    parts.push(data.address.state || data.address.state_district);
-                }
+                // Add state or region
+                if (data.address.state) parts.push(data.address.state);
+                else if (data.address.region) parts.push(data.address.region);
                 
+                // Add country
                 if (data.address.country) parts.push(data.address.country);
                 
                 if (parts.length > 0) {
                     return parts.join(', ');
-                } else {
-                    return data.display_name || 'Unknown Location';
                 }
             }
             
-            return data.display_name || 'Unknown Location';
+            return data.display_name || 'Unknown location';
         } catch (error) {
             console.error('Geocoding error:', error);
-            return 'Location name unavailable';
+            return null;
         }
     }
     
-    // Start the journey animation
-    function startJourney() {
-        console.log('Starting journey with:', userLocation, antipodalLocation);
-        
-        if (!userLocation || !antipodalLocation) {
-            console.error('Location data missing for journey');
+    // Start the digging journey
+    digButton.addEventListener('click', () => {
+        if (!startLocation || !endLocation) {
+            alert('Please set your location first');
             return;
         }
         
         // Update UI
-        startJourneyBtn.classList.add('hidden');
-        journeyAnimationDiv.classList.remove('hidden');
+        journeyStatus.classList.remove('hidden');
+        digButton.disabled = true;
+        resetButton.classList.remove('hidden');
         
-        // Check if earthVisualizer is available in window scope
-        if (window.earthVisualizer) {
-            // Start animation
-            window.earthVisualizer.startJourneyAnimation(
-                userLocation.lat,
-                userLocation.lng,
-                antipodalLocation.lat,
-                antipodalLocation.lng
-            );
-        } else {
-            console.error('Earth visualizer not found');
-            // Show error message
-            journeyAnimationDiv.innerHTML = `
-                <div style="color: red; text-align: center; padding: 10px;">
-                    Error: Could not start journey animation.
-                    Please refresh the page and try again.
-                </div>
-            `;
-        }
-    }
+        // Start the animation
+        earthVisualization.startJourneyAnimation(
+            startLocation.lat,
+            startLocation.lng,
+            endLocation.lat,
+            endLocation.lng
+        );
+    });
     
-    // Reset application
-    function resetApp() {
+    // Reset button
+    resetButton.addEventListener('click', () => {
+        // Reset Earth visualization
+        earthVisualization.reset();
+        
         // Reset UI
-        currentLocationDiv.classList.remove('hidden');
-        locationCoordinatesDiv.classList.add('hidden');
-        journeyAnimationDiv.classList.add('hidden');
-        endLocationDiv.classList.add('hidden');
-        startJourneyBtn.classList.add('hidden');
-        resetBtn.classList.add('hidden');
+        startLocation = null;
+        endLocation = null;
+        startCoords.textContent = 'Not set';
+        startAddress.textContent = 'Not set';
+        endCoords.textContent = 'Not set';
+        endAddress.textContent = 'Not set';
+        endLocation.classList.add('hidden');
+        resetButton.classList.add('hidden');
+        digButton.disabled = true;
+        journeyStatus.classList.add('hidden');
         
-        // Clear search
-        locationSearchInput.value = '';
-        searchResultsDiv.innerHTML = '';
-        searchResultsDiv.classList.add('hidden');
-        
-        // Reset location permission button
-        locationPermissionBtn.disabled = false;
-        locationPermissionBtn.textContent = 'Share My Location';
-        
-        // Reset progress bar and status
-        document.getElementById('journey-progress-bar').style.width = '0';
-        document.getElementById('journey-status-text').textContent = 'Preparing to dig...';
-        
-        // Reset earth visualization
-        earthVisualizer.reset();
-        
-        // Clear location data
-        userLocation = null;
-        antipodalLocation = null;
-    }
-    
-    // Update location status
-    function updateLocationStatus(message) {
-        const locationMessage = document.createElement('p');
-        locationMessage.textContent = message;
-        locationMessage.style.color = 'var(--warning-color)';
-        
-        // Replace existing status or add new one
-        const existingStatus = currentLocationDiv.querySelector('p:not(:first-child)');
-        if (existingStatus) {
-            currentLocationDiv.replaceChild(locationMessage, existingStatus);
-        } else {
-            currentLocationDiv.appendChild(locationMessage);
-        }
-    }
+        // Clear input
+        locationInput.value = '';
+    });
 });
