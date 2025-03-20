@@ -1,6 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize Earth visualization
-    const earthVisualization = new EarthVisualization(document.getElementById('earth-container'));
+    const earthVisualization = new EarthVisualizer(document.getElementById('earth-container'));
     
     // DOM elements
     const locationInput = document.getElementById('location-input');
@@ -37,8 +37,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let endLocation = null;
     
     // Connect UI elements
-    earthVisualization.statusText = statusMessage;
     earthVisualization.progressBar = progressBar;
+    earthVisualization.statusText = statusMessage;
     
     // Location input handling
     locateButton.addEventListener('click', async () => {

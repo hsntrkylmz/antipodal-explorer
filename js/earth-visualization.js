@@ -1,13 +1,18 @@
 class EarthVisualizer {
-    constructor() {
+    constructor(container = null) {
         console.log('EarthVisualizer constructor called');
         
         // DOM elements
-        this.container = document.querySelector('.earth-visualization');
+        if (container) {
+            this.container = container;
+        } else {
+            this.container = document.querySelector('.earth-visualization');
+        }
         console.log('Container found:', this.container);
         
-        this.progressBar = document.getElementById('journey-progress-bar');
-        this.statusText = document.getElementById('journey-status-text');
+        // UI elements - will be connected in app.js
+        this.progressBar = null;
+        this.statusText = null;
         
         // Three.js variables
         this.scene = null;
@@ -819,10 +824,29 @@ class EarthVisualizer {
     
     // Update UI status message
     updateStatusMessage(message) {
-        const statusEl = document.getElementById('status-message');
-        if (statusEl) {
-            statusEl.textContent = message;
+        if (this.statusText) {
+            // Use the statusText reference passed from app.js
+            this.statusText.textContent = message;
+            
+            // Update progress bar if available
+            if (this.progressBar) {
+                // Get progress value from message if possible
+                const progressMatch = message.match(/(\d+)%/);
+                if (progressMatch && progressMatch[1]) {
+                    const progress = parseInt(progressMatch[1]);
+                    this.progressBar.style.width = `${progress}%`;
+                }
+            }
+        } else {
+            // Fallback to direct DOM access
+            const statusEl = document.getElementById('status-message');
+            if (statusEl) {
+                statusEl.textContent = message;
+            }
         }
+        
+        // Log for debugging
+        this.log(`Status: ${message}`);
     }
     
     // Animation loop
@@ -939,16 +963,42 @@ class EarthVisualizer {
         let markerPosition;
         
         if (markerType === 'start' && this.startMarker) {
-            markerPosition = this.startMarker.position.clone();
+            // Find the marker head in the group (first sphere)
+            const pinHead = this.startMarker.children.find(child => 
+                child.geometry && child.geometry.type === 'SphereGeometry');
+            
+            if (pinHead) {
+                markerPosition = pinHead.position.clone();
+            } else {
+                // Fallback to using the group position
+                markerPosition = new THREE.Vector3();
+                this.startMarker.getWorldPosition(markerPosition);
+            }
         } else if (markerType === 'end' && this.endMarker) {
-            markerPosition = this.endMarker.position.clone();
+            // Find the marker head in the group (first sphere)
+            const pinHead = this.endMarker.children.find(child => 
+                child.geometry && child.geometry.type === 'SphereGeometry');
+            
+            if (pinHead) {
+                markerPosition = pinHead.position.clone();
+            } else {
+                // Fallback to using the group position
+                markerPosition = new THREE.Vector3();
+                this.endMarker.getWorldPosition(markerPosition);
+            }
         } else {
             // Fallback to whatever marker exists
-            markerPosition = (this.startMarker || this.endMarker).position.clone();
+            const marker = this.startMarker || this.endMarker;
+            markerPosition = new THREE.Vector3();
+            marker.getWorldPosition(markerPosition);
         }
         
+        this.log(`Found marker position: ${markerPosition.x.toFixed(2)}, ${markerPosition.y.toFixed(2)}, ${markerPosition.z.toFixed(2)}`);
+        
         // Scale the position out slightly to get a good view
-        const scaledPosition = markerPosition.clone().multiplyScalar(1.5);
+        const direction = markerPosition.clone().normalize();
+        const cameraDistance = this.earthRadius * 1.8;
+        const scaledPosition = direction.multiplyScalar(cameraDistance);
         
         // Animate camera to this position
         this.animateCameraToPosition(scaledPosition, 1500, () => {
@@ -977,5 +1027,10 @@ window.addEventListener('DOMContentLoaded', () => {
     }
     
     // Create global instance for other scripts to use
-    window.earthVisualizer = new EarthVisualizer();
+    // Note: This is a fallback. The app.js should create its own instance.
+    const container = document.querySelector('.earth-visualization');
+    if (container && !window.earthVisualizer) {
+        window.earthVisualizer = new EarthVisualizer(container);
+        console.log('Created global Earth visualizer instance');
+    }
 });
