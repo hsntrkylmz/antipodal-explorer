@@ -1,8 +1,8 @@
 class EarthVisualizer {
-    constructor(container) {
-        console.log('EarthVisualizer constructor called');
+    constructor(container = '.earth-visualization') {
+        this.log('Initializing Earth Visualizer');
         
-        // If container is a string, get the element by selector
+        // Get container element
         if (typeof container === 'string') {
             this.container = document.querySelector(container);
         } else {
@@ -10,56 +10,210 @@ class EarthVisualizer {
         }
         
         if (!this.container) {
-            console.error('Container not found');
+            console.error('Could not find container element:', container);
             return;
         }
         
-        // UI elements - will be connected in app.js
-        this.progressBar = null;
-        this.statusText = null;
+        // Display loading message
+        this.showLoading();
         
-        // Initialize properties
-        this.scene = null;
-        this.camera = null;
-        this.renderer = null;
-        this.controls = null;
-        this.earth = null;
-        this.clouds = null;
+        // Set up basic properties
+        this.earthRadius = 1.0;
         this.markerGroups = {};
-        this.raycaster = new THREE.Raycaster();
-        this.mouse = new THREE.Vector2();
         this.isAnimating = false;
-        this.traveler = null;
-        this.trails = [];
+        this.travelerSpeed = 0.005;
+        this.digPathSegments = 50;
+        this.lastAnimateTime = 0;
+        this.rotationSpeed = 0.0005;
+        this.tunnelMeshes = [];
         
-        // Animation variables
-        this.earthRadius = 100;
-        this.animationFrameId = null;
+        // Prepare variables for animation
+        this.startMarker = null;
+        this.endMarker = null;
+        this.digPath = null;
+        this.travelerMesh = null;
         
-        // Debug flag
-        this.debug = true;
+        // Create the scene
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x000000);
         
-        // Load textures and initialize scene
+        // Create the camera
+        this.camera = new THREE.PerspectiveCamera(45, this.container.clientWidth / this.container.clientHeight, 0.01, 1000);
+        this.camera.position.z = 3;
+        
+        // Create the renderer
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+        this.container.appendChild(this.renderer.domElement);
+        
+        // Add ambient light
+        const ambientLight = new THREE.AmbientLight(0x333333);
+        this.scene.add(ambientLight);
+        
+        // Add directional light (sun)
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(5, 3, 5);
+        this.scene.add(directionalLight);
+        
+        // Load textures and create Earth
         this.loadTextures()
             .then(() => {
-                this.initScene();
                 this.createEarth();
                 this.createClouds();
-                this.createLighting();
-                this.animate();
+                this.setupControls();
+                this.setupInteractions();
+                this.hideLoading();
                 
-                // Setup event listeners after everything is initialized
-                this.setupEventListeners();
+                // Start animation loop
+                this.animate();
             })
             .catch(error => {
                 console.error('Error loading textures:', error);
-                this.container.innerHTML = `
-                    <div style="color: white; text-align: center; padding: 20px;">
-                        <p>Error initializing 3D Earth: ${error.message}</p>
-                        <p>Please try using a different browser with WebGL support.</p>
-                    </div>
-                `;
+                this.showLoadingError();
             });
+        
+        // Handle window resize
+        window.addEventListener('resize', this.onWindowResize.bind(this));
+    }
+    
+    // Display loading indicator
+    showLoading() {
+        // Remove any existing loading message
+        const existingLoader = this.container.querySelector('.earth-loader');
+        if (existingLoader) existingLoader.remove();
+        
+        // Create loading message
+        const loader = document.createElement('div');
+        loader.className = 'earth-loader';
+        loader.innerHTML = `
+            <div class="loader-spinner"></div>
+            <div class="loader-text">Loading Earth...</div>
+        `;
+        
+        // Style the loader
+        const style = document.createElement('style');
+        style.textContent = `
+            .earth-loader {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                background: rgba(0, 0, 0, 0.7);
+                color: white;
+                font-family: Arial, sans-serif;
+                z-index: 1000;
+            }
+            
+            .loader-spinner {
+                border: 5px solid rgba(255, 255, 255, 0.3);
+                border-radius: 50%;
+                border-top: 5px solid #3498db;
+                width: 50px;
+                height: 50px;
+                animation: spin 1s linear infinite;
+                margin-bottom: 20px;
+            }
+            
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+            
+            .loader-text {
+                font-size: 16px;
+            }
+        `;
+        
+        // Add to container
+        document.head.appendChild(style);
+        this.container.appendChild(loader);
+    }
+    
+    // Hide loading indicator
+    hideLoading() {
+        const loader = this.container.querySelector('.earth-loader');
+        if (loader) {
+            loader.style.opacity = '0';
+            loader.style.transition = 'opacity 0.5s ease';
+            
+            setTimeout(() => {
+                loader.remove();
+            }, 500);
+        }
+    }
+    
+    // Show loading error with retry button
+    showLoadingError() {
+        // Remove any existing loading message
+        const existingLoader = this.container.querySelector('.earth-loader');
+        if (existingLoader) existingLoader.remove();
+        
+        // Create error message
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'earth-loader';
+        errorDiv.innerHTML = `
+            <div class="loader-text error">Failed to load Earth textures</div>
+            <button class="retry-button">Retry</button>
+        `;
+        
+        // Style the error
+        const style = document.createElement('style');
+        style.textContent = `
+            .earth-loader .error {
+                color: #e74c3c;
+                font-weight: bold;
+                font-size: 18px;
+                margin-bottom: 20px;
+            }
+            
+            .retry-button {
+                background: #3498db;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 5px;
+                cursor: pointer;
+                font-size: 16px;
+                transition: background 0.3s;
+            }
+            
+            .retry-button:hover {
+                background: #2980b9;
+            }
+        `;
+        
+        // Add to container
+        document.head.appendChild(style);
+        this.container.appendChild(errorDiv);
+        
+        // Add retry event
+        const retryButton = errorDiv.querySelector('.retry-button');
+        retryButton.addEventListener('click', () => {
+            errorDiv.remove();
+            this.showLoading();
+            
+            // Reload textures and try again
+            this.loadTextures()
+                .then(() => {
+                    this.createEarth();
+                    this.createClouds();
+                    this.setupControls();
+                    this.setupInteractions();
+                    this.hideLoading();
+                    
+                    // Start animation loop
+                    this.animate();
+                })
+                .catch(error => {
+                    console.error('Error reloading textures:', error);
+                    this.showLoadingError();
+                });
+        });
     }
     
     // Initialize the scene, camera, renderer and controls
@@ -104,93 +258,53 @@ class EarthVisualizer {
     
     // Create a realistic Earth with actual texture maps
     createEarth() {
-        console.log('Creating Earth object for visualization');
+        this.log('Creating Earth mesh');
         
-        // Create Earth geometry with higher detail
-        const radius = 1.0; // Unit radius for easier calculations
-        const earthGeometry = new THREE.SphereGeometry(radius, 64, 64);
+        // Create a sphere geometry for the Earth
+        const geometry = new THREE.SphereGeometry(this.earthRadius, 64, 64);
         
-        // Create material with realistic Earth properties
-        const earthMaterial = new THREE.MeshPhongMaterial({
+        // Create material with texture and bump mapping
+        const material = new THREE.MeshPhongMaterial({
             map: this.textures.earthMap,
             bumpMap: this.textures.earthBumpMap,
             bumpScale: 0.05,
-            specularMap: this.textures.earthSpecularMap,
+            specularMap: this.textures.earthSpecMap,
             specular: new THREE.Color(0x333333),
-            shininess: 15
+            shininess: 15,
         });
         
-        // Create Earth mesh
-        this.earth = new THREE.Mesh(earthGeometry, earthMaterial);
+        // Create the Earth mesh
+        this.earth = new THREE.Mesh(geometry, material);
+        this.earthMesh = this.earth; // For consistency in references
+        
+        // Add to scene
         this.scene.add(this.earth);
         
-        console.log('Earth object created:', this.earth);
-        
-        // FIXED: Ensure we're using correct radius size across the app
-        this.earthRadius = radius; 
-        
-        // Add star field background to enhance the space ambiance
-        this.addStarField();
-        
-        return this.earth;
+        this.log('Earth created successfully');
     }
     
-    // Add a star field to enhance the space ambiance
-    addStarField() {
-        const starsGeometry = new THREE.BufferGeometry();
-        const starCount = 5000;
-        const positions = new Float32Array(starCount * 3);
-        const sizes = new Float32Array(starCount);
-        
-        for (let i = 0; i < starCount; i++) {
-            // Random positions for stars
-            positions[i * 3] = (Math.random() - 0.5) * 2000;
-            positions[i * 3 + 1] = (Math.random() - 0.5) * 2000;
-            positions[i * 3 + 2] = (Math.random() - 0.5) * 2000;
-            
-            // Random sizes for stars
-            sizes[i] = Math.random() * 2;
-        }
-        
-        starsGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        starsGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-        
-        const starMaterial = new THREE.PointsMaterial({
-            color: 0xffffff,
-            size: 0.01,
-            transparent: true,
-            sizeAttenuation: true
-        });
-        
-        const starField = new THREE.Points(starsGeometry, starMaterial);
-        this.scene.add(starField);
-    }
-    
-    // Create cloud layer
+    // Create cloud layer around the Earth
     createClouds() {
-        // Create clouds layer
-        const cloudsGeometry = new THREE.SphereGeometry(this.earthRadius * 1.01, 64, 64);
-        const cloudsMaterial = new THREE.MeshPhongMaterial({
+        this.log('Creating cloud layer');
+        
+        // Create a slightly larger sphere for clouds
+        const geometry = new THREE.SphereGeometry(this.earthRadius * 1.01, 64, 64);
+        
+        // Create semi-transparent cloud material
+        const material = new THREE.MeshPhongMaterial({
             map: this.textures.cloudsMap,
             transparent: true,
-            opacity: 0.3,
-            blending: THREE.AdditiveBlending
+            opacity: 0.8,
+            blending: THREE.NormalBlending
         });
         
-        this.clouds = new THREE.Mesh(cloudsGeometry, cloudsMaterial);
+        // Create the clouds mesh
+        this.clouds = new THREE.Mesh(geometry, material);
+        
+        // Add to scene
         this.scene.add(this.clouds);
         
-        // Add a subtle glow effect (atmosphere)
-        const atmosphereGeometry = new THREE.SphereGeometry(this.earthRadius * 1.02, 64, 64);
-        const atmosphereMaterial = new THREE.MeshPhongMaterial({
-            color: 0x5599ff,
-            transparent: true,
-            opacity: 0.15,
-            side: THREE.BackSide
-        });
-        
-        const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
-        this.scene.add(atmosphere);
+        this.log('Clouds created successfully');
     }
     
     // Create lighting for the scene
@@ -227,7 +341,7 @@ class EarthVisualizer {
                 this.textures = {
                     earthMap: null,
                     earthBumpMap: null,
-                    earthSpecularMap: null,
+                    earthSpecMap: null,
                     cloudsMap: null
                 };
                 
@@ -242,7 +356,7 @@ class EarthVisualizer {
                         'https://unpkg.com/three-globe@2.24.4/example/img/earth-topology.png',
                         'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_normal_2048.jpg'
                     ],
-                    earthSpecularMap: [
+                    earthSpecMap: [
                         'https://unpkg.com/three-globe@2.24.4/example/img/earth-water.png',
                         'https://www.solarsystemscope.com/textures/download/2k_earth_specular_map.jpg'
                     ],
@@ -275,7 +389,7 @@ class EarthVisualizer {
                         const colors = {
                             earthMap: '#1565C0',
                             earthBumpMap: '#555555',
-                            earthSpecularMap: '#AAAAAA',
+                            earthSpecMap: '#AAAAAA',
                             cloudsMap: '#FFFFFF'
                         };
                         
@@ -359,10 +473,10 @@ class EarthVisualizer {
         this.log(`Setting marker ${markerID} at position ${lat.toFixed(2)}, ${lng.toFixed(2)}`);
         const position = this.latLngTo3d(lat, lng, this.earthRadius * 1.02);
         
-        // FIXED: Properly track markers with the markerGroups object
+        // Clean up existing marker if it exists
         if (this.markerGroups[markerID]) {
             this.scene.remove(this.markerGroups[markerID]);
-            // Dispose geometries and materials to avoid memory leaks
+            // Properly dispose geometries and materials to avoid memory leaks
             this.markerGroups[markerID].traverse((object) => {
                 if (object.geometry) object.geometry.dispose();
                 if (object.material) {
@@ -379,9 +493,13 @@ class EarthVisualizer {
         const markerGroup = new THREE.Group();
         markerGroup.name = markerID;
         
-        // Pin style marker with pin head and stem
-        const pinHeadGeometry = new THREE.SphereGeometry(0.05, 16, 16);
-        const pinColor = markerID === 'start-marker' ? 0x00ff00 : 0xff0000;
+        // Determine marker properties based on type
+        const isStartMarker = markerID === 'start-marker';
+        const pinColor = isStartMarker ? 0x00ff00 : 0xff0000;
+        const labelText = isStartMarker ? 'Start' : 'Destination';
+        
+        // Create pin head with glow effect
+        const pinHeadGeometry = new THREE.SphereGeometry(0.04, 16, 16);
         const pinMaterial = new THREE.MeshPhongMaterial({
             color: pinColor,
             emissive: pinColor,
@@ -393,22 +511,38 @@ class EarthVisualizer {
         pinHead.position.copy(position);
         markerGroup.add(pinHead);
         
-        // Pin stem (cone pointing to the surface)
-        const direction = position.clone().normalize();
+        // Add a glow effect around the pin head
+        const glowGeometry = new THREE.SphereGeometry(0.06, 16, 16);
+        const glowMaterial = new THREE.MeshBasicMaterial({
+            color: pinColor,
+            transparent: true,
+            opacity: 0.3,
+            side: THREE.BackSide
+        });
+        
+        const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+        glow.position.copy(position);
+        markerGroup.add(glow);
+        
+        // Create pin stem (pointing into the Earth)
         const stemLength = 0.08;
-        const pinStemGeometry = new THREE.CylinderGeometry(0.01, 0.03, stemLength, 8);
+        const pinStemGeometry = new THREE.CylinderGeometry(0.01, 0.02, stemLength, 8);
         const pinStem = new THREE.Mesh(pinStemGeometry, pinMaterial);
         
-        // Position the stem to point from the surface to the pinhead
-        const stemPosition = position.clone().sub(direction.multiplyScalar(stemLength/2));
+        // Calculate stem position and orientation
+        const direction = position.clone().normalize();
+        const stemPosition = position.clone().sub(direction.clone().multiplyScalar(stemLength/2));
         pinStem.position.copy(stemPosition);
         
-        // Orient the stem to point outward from the center of the Earth
-        pinStem.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize());
+        // Orient stem to point toward Earth center
+        pinStem.quaternion.setFromUnitVectors(
+            new THREE.Vector3(0, 1, 0), 
+            direction.clone()
+        );
         
         markerGroup.add(pinStem);
         
-        // Add a glowing halo effect
+        // Add a circular halo around the marker
         const haloGeometry = new THREE.RingGeometry(0.06, 0.09, 32);
         const haloMaterial = new THREE.MeshBasicMaterial({
             color: pinColor,
@@ -419,26 +553,48 @@ class EarthVisualizer {
         
         const halo = new THREE.Mesh(haloGeometry, haloMaterial);
         halo.position.copy(position);
-        halo.lookAt(0, 0, 0); // Face toward the center of the Earth
+        
+        // Make halo face the camera
+        halo.lookAt(this.camera.position);
+        
+        // Add event to update halo orientation on camera change
+        const updateHaloOrientation = () => {
+            halo.lookAt(this.camera.position);
+        };
+        
+        // Store the function so we can remove it later
+        halo.userData.updateOrientation = updateHaloOrientation;
+        
+        // Add event listener to camera movement
+        if (this.controls) {
+            this.controls.addEventListener('change', updateHaloOrientation);
+        }
+        
         markerGroup.add(halo);
         
-        // Add label
-        const labelText = markerID === 'start-marker' ? 'Start' : 'Destination';
+        // Create text label
         const canvas = document.createElement('canvas');
         canvas.width = 128;
         canvas.height = 64;
         const context = canvas.getContext('2d');
         
-        // Draw label text
+        // Draw label with background
         context.fillStyle = 'rgba(0, 0, 0, 0.7)';
         context.fillRect(0, 0, canvas.width, canvas.height);
-        context.fillStyle = markerID === 'start-marker' ? '#00ff00' : '#ff0000';
+        
+        // Draw border
+        context.strokeStyle = pinColor;
+        context.lineWidth = 3;
+        context.strokeRect(3, 3, canvas.width - 6, canvas.height - 6);
+        
+        // Draw text
+        context.fillStyle = isStartMarker ? '#00ff00' : '#ff0000';
         context.font = 'bold 24px Arial';
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         context.fillText(labelText, canvas.width / 2, canvas.height / 2);
         
-        // Create label texture and sprite
+        // Create sprite
         const labelTexture = new THREE.CanvasTexture(canvas);
         const labelMaterial = new THREE.SpriteMaterial({
             map: labelTexture,
@@ -446,19 +602,39 @@ class EarthVisualizer {
         });
         
         const label = new THREE.Sprite(labelMaterial);
-        label.position.copy(position.clone().multiplyScalar(1.1));
+        
+        // Position label above the marker
+        const labelPos = position.clone().multiplyScalar(1.2);
+        label.position.copy(labelPos);
         label.scale.set(0.2, 0.1, 1);
+        
+        // Make label face the camera
+        const updateLabelOrientation = () => {
+            label.position.copy(position.clone().multiplyScalar(1.2));
+        };
+        
+        // Store the function so we can remove it later
+        label.userData.updateOrientation = updateLabelOrientation;
+        
+        // Add event listener for camera movement
+        if (this.controls) {
+            this.controls.addEventListener('change', updateLabelOrientation);
+        }
+        
         markerGroup.add(label);
         
-        // Add debug info
-        console.log(`Marker ${markerID} at: lat=${lat}, lng=${lng}, pos=(${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`);
+        // Log marker creation
+        console.log(`Created marker ${markerID} at: ${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}`);
         
-        // FIXED: Store in markerGroups and add to scene
+        // Store in markerGroups and add to scene
         this.markerGroups[markerID] = markerGroup;
         this.scene.add(markerGroup);
         
-        // For backward compatibility - maintain old references
-        if (markerID === 'start-marker') {
+        // Pulse the marker when first created
+        this.pulseMarker(markerID, 0.8);
+        
+        // For compatibility with old code
+        if (isStartMarker) {
             this.startMarker = markerGroup;
             
             // Only focus on starting point marker
@@ -497,6 +673,7 @@ class EarthVisualizer {
     
     // Animate camera to a position and lookAt target
     animateCameraTo(targetPosition, targetLookAt, duration = 1000, callback) {
+        // Store the camera's current values
         const startPosition = this.camera.position.clone();
         const startRotation = this.camera.quaternion.clone();
         
@@ -513,6 +690,7 @@ class EarthVisualizer {
         // Disable controls during camera animation
         if (this.controls) {
             this.controls.enabled = false;
+            this.controls.autoRotate = false;
         }
         
         // Animation function
@@ -521,8 +699,8 @@ class EarthVisualizer {
             const elapsed = now - startTime;
             const progress = Math.min(elapsed / duration, 1);
             
-            // Use easing function for smoother animation
-            const ease = this.easeInOutCubic(progress);
+            // Use smoother easing function
+            const ease = this.easeOutCubic(progress);
             
             // Interpolate position
             this.camera.position.lerpVectors(startPosition, targetPosition, ease);
@@ -534,17 +712,18 @@ class EarthVisualizer {
             if (progress < 1) {
                 requestAnimationFrame(updateCamera);
             } else {
-                // Re-enable controls after animation
-                if (this.controls) {
-                    setTimeout(() => {
+                // Add a small delay before re-enabling controls for smoother experience
+                setTimeout(() => {
+                    // Re-enable controls after animation
+                    if (this.controls) {
                         this.controls.enabled = true;
-                    }, 100);
-                }
-                
-                // Call the callback function if provided
-                if (callback && typeof callback === 'function') {
-                    callback();
-                }
+                    }
+                    
+                    // Call the callback function if provided
+                    if (callback && typeof callback === 'function') {
+                        callback();
+                    }
+                }, 200);
             }
         };
         
@@ -552,9 +731,18 @@ class EarthVisualizer {
         updateCamera();
     }
     
-    // Helper function for camera transitions (cubic easing function)
+    // Helper functions for camera transitions
     easeInOutCubic(t) {
         return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    }
+    
+    easeOutCubic(t) {
+        return 1 - Math.pow(1 - t, 3);
+    }
+    
+    easeOutElastic(t) {
+        const p = 0.3;
+        return Math.pow(2, -10 * t) * Math.sin((t - p / 4) * (2 * Math.PI) / p) + 1;
     }
     
     // Draw path between start and end points through the Earth
@@ -663,311 +851,388 @@ class EarthVisualizer {
         return points;
     }
     
-    // Animate the journey through Earth
-    startJourneyAnimation(startLat, startLng, endLat, endLng) {
-        this.log(`Starting journey animation from (${startLat}, ${startLng}) to (${endLat}, ${endLng})`);
+    // Start the journey animation between the two markers
+    startJourneyAnimation() {
+        this.log('Starting journey animation');
         
-        // Set animation state to active
+        if (!this.markerGroups['start-marker'] || !this.markerGroups['end-marker']) {
+            this.log('Error: Need both start and end markers to animate the journey');
+            return false;
+        }
+        
+        // Already animating
+        if (this.isAnimating) {
+            this.log('Animation already in progress');
+            return false;
+        }
+        
+        // Set animation flag
         this.isAnimating = true;
         
-        // Create the dig path first for better visualization
-        const points = this.drawDigPath(startLat, startLng, endLat, endLng);
+        // Update status
+        this.updateStatusMessage('Preparing for the journey...', 0);
         
-        // Store camera position for restoration later
-        this.initialCameraPosition = this.camera.position.clone();
-        this.initialCameraQuaternion = this.camera.quaternion.clone();
+        // Create the dig path between markers
+        this.drawDigPath();
         
-        // Disable controls during animation
-        if (this.controls) {
-            this.controls.enabled = false;
-        }
+        // Get start position
+        let startPosition;
+        this.markerGroups['start-marker'].traverse((object) => {
+            if (!startPosition && object.isMesh) {
+                startPosition = object.position.clone();
+            }
+        });
         
-        // Stop auto-rotation
-        this.autoRotate = false;
-        this.controls.autoRotate = false;
+        // Focus on starting position
+        this.focusOnMarker('start-marker', 1500);
         
-        // First, focus on the start position before beginning the journey
-        this.focusOnLocation(this.latLngTo3d(startLat, startLng, this.earthRadius), 1500, () => {
-            // Update UI message
-            this.updateStatusMessage("Beginning to dig...");
+        // Start journey animation sequence
+        setTimeout(() => {
+            this.updateStatusMessage('Starting the dig...', 10);
             
-            // Create a traveling sphere to represent our journey
+            // Create traveler (digging sphere)
             this.createTraveler();
             
-            // Path animation variables
-            let pathIndex = 0;
-            const pathSpeed = 60 / points.length; // Complete journey in about 60 frames
-            let trailPoints = [];
-            let lastTrailAddTime = 0;
+            // Start at the beginning of the path
+            this.travelerProgress = 0;
             
-            // Create a group for trails
-            if (!this.trailGroup) {
-                this.trailGroup = new THREE.Group();
-                this.scene.add(this.trailGroup);
-            } else {
-                // Clear existing trails
-                while (this.trailGroup.children.length) {
-                    const trail = this.trailGroup.children[0];
-                    trail.geometry.dispose();
-                    trail.material.dispose();
-                    this.trailGroup.remove(trail);
-                }
-            }
+            // Move camera to a good angle to view the journey start
+            const cameraPosition = startPosition.clone().multiplyScalar(1.8);
+            const cameraTarget = startPosition.clone();
             
-            // Animation function for the journey
-            const animateJourney = () => {
-                if (!this.isAnimating) return;
+            // Animate camera to starting position
+            this.animateCameraToPosition(cameraPosition, cameraTarget, 2000, () => {
+                // Start the digging animation
+                this.updateStatusMessage('Digging through the Earth...', 20);
                 
-                // Update path position
-                if (pathIndex < points.length) {
-                    // Update traveler position
-                    if (this.traveler) {
-                        this.traveler.position.copy(points[pathIndex]);
-                    }
-                    
-                    // Add trail point periodically
-                    const now = Date.now();
-                    if (now - lastTrailAddTime > 100) { // Add a trail point every 100ms
-                        lastTrailAddTime = now;
-                        trailPoints.push(points[pathIndex].clone());
+                // Look at Earth center when halfway through
+                setTimeout(() => {
+                    const halfwayProgress = 0.5;
+                    setTimeout(() => {
+                        this.updateStatusMessage('Approaching the Earth\'s core...', 40);
                         
-                        // Update trail visualization
-                        if (trailPoints.length > 1) {
-                            this.updateTrail(trailPoints);
-                        }
-                    }
+                        // Move camera to see Earth's interior
+                        const centerDirection = new THREE.Vector3(0, 1, 0);
+                        const interiorView = centerDirection.clone().multiplyScalar(1.8);
+                        this.animateCameraToPosition(interiorView, new THREE.Vector3(0, 0, 0), 3000);
+                    }, this.getTimeForProgress(halfwayProgress / 2));
                     
-                    // Update UI message based on journey progress
-                    const progress = Math.floor((pathIndex / points.length) * 100);
-                    
-                    if (progress < 10) {
-                        this.updateStatusMessage("Drilling through the Earth's crust...");
-                    } else if (progress < 30) {
-                        this.updateStatusMessage("Passing through the upper mantle...");
-                    } else if (progress < 45) {
-                        this.updateStatusMessage("Traveling through the lower mantle...");
-                    } else if (progress < 50) {
-                        this.updateStatusMessage("Approaching the outer core...");
-                    } else if (progress === 50) {
-                        this.updateStatusMessage("Reached the Earth's core!");
+                    // Halfway point - look at center
+                    setTimeout(() => {
+                        this.updateStatusMessage('Passing through the Earth\'s core...', 50);
                         
-                        // At the center, pause briefly and take a wider view
-                        this.animateCameraToPosition(
-                            new THREE.Vector3(0, 0, 350), // Move camera out for a wider view
-                            1000, // Duration
-                            () => {
-                                // Continue journey after pause
-                                setTimeout(() => {
-                                    this.updateStatusMessage("Continuing journey through the inner core...");
-                                }, 500);
+                        // Move camera to center view
+                        const sideDirection = new THREE.Vector3(1, 0.5, 0.5).normalize();
+                        const centerView = sideDirection.clone().multiplyScalar(1.5);
+                        this.animateCameraToPosition(centerView, new THREE.Vector3(0, 0, 0), 2000);
+                    }, this.getTimeForProgress(halfwayProgress));
+                    
+                    // Approaching destination
+                    setTimeout(() => {
+                        this.updateStatusMessage('Approaching destination...', 75);
+                        
+                        // Move camera to prepare for emergence
+                        let endPosition;
+                        this.markerGroups['end-marker'].traverse((object) => {
+                            if (!endPosition && object.isMesh) {
+                                endPosition = object.position.clone();
                             }
-                        );
-                    } else if (progress < 70) {
-                        this.updateStatusMessage("Leaving the Earth's core...");
-                    } else if (progress < 90) {
-                        this.updateStatusMessage("Passing through the lower mantle...");
-                    } else {
-                        this.updateStatusMessage("Almost there! Drilling through the crust...");
-                    }
-                    
-                    // Camera animation at key points
-                    if (pathIndex === Math.floor(points.length * 0.25)) {
-                        // Quarter way - show the Earth's interior
-                        const targetPosition = points[pathIndex].clone().multiplyScalar(1.5);
-                        this.animateCameraToPosition(targetPosition, 1000);
-                    } else if (pathIndex === Math.floor(points.length * 0.5)) {
-                        // Half way - at the center
-                        const targetPosition = new THREE.Vector3(0, 0, 200);
-                        this.animateCameraToPosition(targetPosition, 1000);
-                    } else if (pathIndex === Math.floor(points.length * 0.75)) {
-                        // Three quarters - preparing to emerge
-                        const targetPosition = points[pathIndex].clone().multiplyScalar(1.5);
-                        this.animateCameraToPosition(targetPosition, 1000);
-                    }
-                    
-                    // Increment path index
-                    pathIndex += pathSpeed;
-                    
-                    // Ensure we don't exceed the array length
-                    if (pathIndex >= points.length) {
-                        pathIndex = points.length - 1;
-                    }
-                    
-                    // Continue animation if not at the end
-                    if (pathIndex < points.length - 1) {
-                        requestAnimationFrame(animateJourney);
-                    } else {
-                        // At the end of the path
-                        this.updateStatusMessage("Reached destination!");
-                        
-                        // Focus on the destination point
-                        const endPosition = this.latLngTo3d(endLat, endLng, this.earthRadius);
-                        this.focusOnLocation(endPosition, 1500, () => {
-                            // Enable controls after animation
-                            if (this.controls) {
-                                this.controls.enabled = true;
-                            }
-                            
-                            // Animation is complete
-                            this.isAnimating = false;
-                            
-                            // Show completion message
-                            this.updateStatusMessage("Journey complete! You've reached the antipodal point.");
-                            
-                            // Leave the traveler at the end position
-                            // Hide it after a few seconds
-                            setTimeout(() => {
-                                if (this.traveler) {
-                                    this.scene.remove(this.traveler);
-                                    this.traveler = null;
-                                }
-                            }, 3000);
                         });
-                    }
-                }
-            };
-            
-            // Start the journey animation
-            animateJourney();
-        });
+                        
+                        if (endPosition) {
+                            // Position camera to watch the traveler emerge
+                            const approachDirection = endPosition.clone().normalize();
+                            const approachPosition = approachDirection.multiplyScalar(1.8);
+                            this.animateCameraToPosition(approachPosition, endPosition, 3000);
+                        }
+                    }, this.getTimeForProgress(halfwayProgress * 1.5));
+                }, 2000);
+            });
+        }, 1500);
+        
+        return true;
     }
     
-    // Create a traveling sphere to represent our journey
+    // Calculate time for a specific progress point in the animation
+    getTimeForProgress(progress) {
+        // Total animation time estimate based on traveler speed
+        const totalAnimationTime = (1 / this.travelerSpeed) * 16.67; // ms
+        return totalAnimationTime * progress;
+    }
+    
+    // Create the digging traveler (sphere that moves along the path)
     createTraveler() {
+        this.log('Creating traveler sphere');
+        
         // Remove existing traveler if any
-        if (this.traveler) {
-            this.scene.remove(this.traveler);
+        if (this.travelerMesh) {
+            this.scene.remove(this.travelerMesh);
+            if (this.travelerMesh.geometry) this.travelerMesh.geometry.dispose();
+            if (this.travelerMesh.material) this.travelerMesh.material.dispose();
         }
         
-        const travelerGeometry = new THREE.SphereGeometry(3.5, 32, 32);
-        const travelerMaterial = new THREE.MeshBasicMaterial({ 
-            color: 0xffff00,
-            transparent: true,
-            opacity: 0.9
+        // Create a glowing sphere for the traveler
+        const travelerGeometry = new THREE.SphereGeometry(0.05, 16, 16);
+        const travelerMaterial = new THREE.MeshPhongMaterial({
+            color: 0x00ffff,
+            emissive: 0x00ffff,
+            emissiveIntensity: 0.8,
+            shininess: 30
         });
         
-        this.traveler = new THREE.Mesh(travelerGeometry, travelerMaterial);
+        this.travelerMesh = new THREE.Mesh(travelerGeometry, travelerMaterial);
         
-        // Add glow effect
-        const glowGeometry = new THREE.SphereGeometry(5, 32, 32);
-        const glowMaterial = new THREE.ShaderMaterial({
-            uniforms: {
-                c: { type: "f", value: 0.3 },
-                p: { type: "f", value: 5.0 },
-                glowColor: { type: "c", value: new THREE.Color(0xffff00) },
-                viewVector: { type: "v3", value: this.camera.position }
-            },
-            vertexShader: `
-                uniform vec3 viewVector;
-                uniform float c;
-                uniform float p;
-                varying float intensity;
-                void main() {
-                    vec3 vNormal = normalize(normal);
-                    vec3 vNormel = normalize(viewVector);
-                    intensity = pow(c - dot(vNormal, vNormel), p);
-                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                }
-            `,
-            fragmentShader: `
-                uniform vec3 glowColor;
-                varying float intensity;
-                void main() {
-                    gl_FragColor = vec4(glowColor, 1.0) * intensity;
-                }
-            `,
-            side: THREE.BackSide,
-            blending: THREE.AdditiveBlending,
-            transparent: true
+        // Create a glowing effect around the traveler
+        const glowGeometry = new THREE.SphereGeometry(0.08, 16, 16);
+        const glowMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00ffff,
+            transparent: true,
+            opacity: 0.4,
+            side: THREE.BackSide
         });
         
         const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-        this.traveler.add(glow);
+        this.travelerMesh.add(glow);
         
-        this.scene.add(this.traveler);
-        return this.traveler;
+        // Add a trail effect
+        this.trailMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00ffff,
+            transparent: true,
+            opacity: 0.2,
+            side: THREE.DoubleSide
+        });
+        
+        // Start with an empty trail
+        this.trailMesh = new THREE.Mesh(
+            new THREE.TubeGeometry(this.digPath, this.digPathSegments, 0.01, 8, false, 0, 0),
+            this.trailMaterial
+        );
+        
+        // Add to scene
+        this.scene.add(this.travelerMesh);
+        this.scene.add(this.trailMesh);
+        
+        // Initialize traveler at the start of the path
+        const startPoint = this.digPath.getPointAt(0);
+        this.travelerMesh.position.copy(startPoint);
+        
+        this.log('Traveler created');
     }
     
-    // Update the trail visualization
-    updateTrail(points) {
-        // Remove old trail
-        for (let i = this.trailGroup.children.length - 1; i >= 0; i--) {
-            const trail = this.trailGroup.children[i];
-            this.trailGroup.remove(trail);
-            trail.geometry.dispose();
-            trail.material.dispose();
-        }
+    // Complete the journey animation
+    completeJourneyAnimation() {
+        if (!this.isAnimating) return;
         
-        // Create new trail with current points
-        if (points.length > 1) {
-            const trailGeometry = new THREE.BufferGeometry().setFromPoints(points);
-            const trailMaterial = new THREE.LineBasicMaterial({ 
-                color: 0x00ffff, 
-                transparent: true, 
-                opacity: 0.7,
-                linewidth: 2,
-            });
+        this.log('Completing journey animation');
+        this.isAnimating = false;
+        
+        // Update UI
+        this.updateStatusMessage('Journey complete!', 100);
+        
+        // Focus on the destination marker
+        setTimeout(() => {
+            this.focusOnMarker('end-marker', 2000);
             
-            const trail = new THREE.Line(trailGeometry, trailMaterial);
-            this.trailGroup.add(trail);
-        }
+            // Cleanup animation objects after a delay
+            setTimeout(() => {
+                this.cleanupJourneyAnimation();
+            }, 3000);
+        }, 1000);
     }
     
-    // Update UI status message
-    updateStatusMessage(message) {
-        if (this.statusText) {
-            // Use the statusText reference passed from app.js
-            this.statusText.textContent = message;
-            
-            // Update progress bar if available
-            if (this.progressBar) {
-                // Get progress value from message if possible
-                const progressMatch = message.match(/(\d+)%/);
-                if (progressMatch && progressMatch[1]) {
-                    const progress = parseInt(progressMatch[1]);
-                    this.progressBar.style.width = `${progress}%`;
-                }
-            }
+    // Clean up animation objects
+    cleanupJourneyAnimation() {
+        this.log('Cleaning up journey animation');
+        
+        // Keep tunnel visible but remove traveler and trail
+        if (this.travelerMesh) {
+            this.scene.remove(this.travelerMesh);
+            if (this.travelerMesh.geometry) this.travelerMesh.geometry.dispose();
+            if (this.travelerMesh.material) this.travelerMesh.material.dispose();
+            this.travelerMesh = null;
+        }
+        
+        if (this.trailMesh) {
+            this.scene.remove(this.trailMesh);
+            if (this.trailMesh.geometry) this.trailMesh.geometry.dispose();
+            if (this.trailMesh.material) this.trailMesh.material.dispose();
+            this.trailMesh = null;
+        }
+        
+        // Dispatch event that journey is complete
+        const event = new CustomEvent('journey-completed');
+        this.container.dispatchEvent(event);
+    }
+    
+    // Update journey progress bar and status message
+    updateJourneyProgress(progress) {
+        // Update progress percentage (0-100)
+        const percentage = Math.round(progress * 100);
+        
+        // Update progress bar if available
+        if (this.progressBar) {
+            this.progressBar.style.width = `${percentage}%`;
+            this.progressBar.setAttribute('aria-valuenow', percentage);
+        }
+        
+        // Update status message based on progress
+        if (percentage < 10) {
+            this.updateStatusMessage('Starting the dig...', percentage);
+        } else if (percentage < 40) {
+            this.updateStatusMessage('Digging through the Earth\'s crust...', percentage);
+        } else if (percentage < 50) {
+            this.updateStatusMessage('Approaching the Earth\'s core...', percentage);
+        } else if (percentage < 60) {
+            this.updateStatusMessage('Passing through the Earth\'s core...', percentage);
+        } else if (percentage < 90) {
+            this.updateStatusMessage('Traveling through the mantle...', percentage);
+        } else if (percentage < 100) {
+            this.updateStatusMessage('Almost there!', percentage);
         } else {
-            // Fallback to direct DOM access
-            const statusEl = document.getElementById('status-message');
-            if (statusEl) {
-                statusEl.textContent = message;
+            this.updateStatusMessage('Journey complete!', 100);
+        }
+    }
+    
+    // Update the status message element
+    updateStatusMessage(message, progress = -1) {
+        this.log(`Status update: ${message} (${progress}%)`);
+        
+        // Update status text if available
+        if (this.statusText) {
+            this.statusText.textContent = message;
+        }
+        
+        // Also update progress bar if a value is provided
+        if (progress >= 0 && this.progressBar) {
+            this.progressBar.style.width = `${progress}%`;
+            this.progressBar.setAttribute('aria-valuenow', progress);
+        }
+        
+        // Dispatch a status update event
+        const event = new CustomEvent('status-update', {
+            detail: { message, progress }
+        });
+        this.container.dispatchEvent(event);
+    }
+    
+    // Set progress bar element reference
+    setProgressBar(element) {
+        this.progressBar = element;
+    }
+    
+    // Set status text element reference
+    setStatusText(element) {
+        this.statusText = element;
+    }
+    
+    // Main animation loop
+    animate() {
+        // Calculate time delta for smooth animation
+        const now = performance.now();
+        let deltaTime = 0;
+        
+        if (this.lastAnimateTime > 0) {
+            deltaTime = (now - this.lastAnimateTime) / 1000; // Convert to seconds
+        }
+        
+        this.lastAnimateTime = now;
+        
+        // Request the next frame first to ensure smooth animation
+        requestAnimationFrame(this.animate.bind(this));
+        
+        // Skip if earth not initialized yet
+        if (!this.earth) return;
+        
+        // Rotate Earth and clouds if controls are enabled and not animating camera
+        if (this.controls && !this.controls.autoRotate && !this.isCameraAnimating) {
+            // Apply rotation based on delta time for consistent speed
+            this.earth.rotation.y += this.rotationSpeed * deltaTime * 60; // Normalize to 60fps
+            
+            if (this.clouds) {
+                // Clouds rotate slightly faster than Earth
+                this.clouds.rotation.y += this.rotationSpeed * 1.1 * deltaTime * 60;
             }
         }
         
-        // Log for debugging
-        this.log(`Status: ${message}`);
-    }
-    
-    // Animation loop
-    animate() {
-        this.animationFrameId = requestAnimationFrame(() => this.animate());
-        
-        // Update orbit controls if enabled
+        // Update controls if available
         if (this.controls) {
             this.controls.update();
         }
         
-        // Auto-rotate Earth and clouds when controls are disabled
-        if (this.earth && !this.controls.enabled) {
-            this.earth.rotation.y += 0.0005;
+        // Animate digging traveler if animation is active
+        if (this.isAnimating && this.travelerMesh) {
+            this.updateDiggingAnimation(deltaTime);
         }
         
-        if (this.clouds) {
-            // Clouds always rotate slightly, even when Earth rotation is controlled by user
-            this.clouds.rotation.y += 0.0003;
+        // Render the scene
+        this.renderer.render(this.scene, this.camera);
+    }
+    
+    // Update digging animation with time delta
+    updateDiggingAnimation(deltaTime) {
+        if (!this.digPath || !this.travelerProgress || !this.travelerMesh) return;
+        
+        // Calculate new position with adjusted speed
+        this.travelerProgress += this.travelerSpeed * deltaTime * 60; // Normalize to 60fps
+        
+        // Clamp progress to prevent going beyond the path end
+        if (this.travelerProgress > 1) {
+            this.travelerProgress = 1;
+        }
+        
+        // Check if animation completed
+        if (this.travelerProgress >= 1) {
+            this.completeJourneyAnimation();
+            return;
+        }
+        
+        // Get current position along the path
+        const position = this.digPath.getPointAt(this.travelerProgress);
+        this.travelerMesh.position.copy(position);
+        
+        // Get next point along the path to orient the traveler
+        const lookAtPoint = this.digPath.getPointAt(Math.min(this.travelerProgress + 0.01, 1));
+        this.travelerMesh.lookAt(lookAtPoint);
+        
+        // Update the trail effect if enabled
+        if (this.trailMesh && this.trailMaterial) {
+            // Make the trail more visible as the journey progresses
+            const trailOpacity = Math.min(0.8, this.travelerProgress * 1.5);
+            this.trailMaterial.opacity = trailOpacity;
             
-            // When Earth is auto-rotating, clouds rotate faster
-            if (!this.controls.enabled) {
-                this.clouds.rotation.y += 0.0004;
-            }
+            // Extend the trail to the current position
+            const trailLength = this.travelerProgress;
+            this.trailMesh.geometry = new THREE.TubeGeometry(
+                this.digPath,
+                this.digPathSegments,
+                0.03, // tube radius
+                8, // tubular segments
+                false, // closed
+                0, // start
+                trailLength // end
+            );
         }
         
-        // Render scene
-        if (this.renderer && this.scene && this.camera) {
-            this.renderer.render(this.scene, this.camera);
-        }
+        // Update journey progress bar and status if available
+        this.updateJourneyProgress(this.travelerProgress);
+    }
+    
+    // Update the window resize event
+    onWindowResize() {
+        if (!this.camera || !this.renderer || !this.container) return;
+        
+        // Update camera aspect ratio
+        this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
+        this.camera.updateProjectionMatrix();
+        
+        // Update renderer size
+        this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+    }
+    
+    // Utility function for logging with timestamp
+    log(message) {
+        const timestamp = new Date().toISOString().substr(11, 8);
+        console.log(`[${timestamp}] [EarthVisualizer] ${message}`);
     }
     
     // Toggle between auto-rotation and manual control
@@ -1036,67 +1301,222 @@ class EarthVisualizer {
     }
     
     // Animate camera to specific position
-    animateCameraToPosition(targetPosition, duration = 1000, callback) {
-        // Calculate target look at (always look at Earth center)
-        const targetLookAt = new THREE.Vector3(0, 0, 0);
+    animateCameraToPosition(targetPosition, targetLookAt, duration = 1000, callback = null) {
+        // Store current camera properties
+        const startPosition = this.camera.position.clone();
+        const startTarget = this.controls.target.clone();
         
-        // Call the main camera animation function
-        this.animateCameraTo(targetPosition, targetLookAt, duration, callback);
+        // Calculate animation parameters
+        const startTime = performance.now();
+        const endTime = startTime + duration;
+        
+        // Disable controls during animation
+        if (this.controls) {
+            this.controls.enabled = false;
+        }
+        
+        // Set flag to prevent Earth rotation during camera animation
+        this.isCameraAnimating = true;
+        
+        // Animation function
+        const animateCamera = () => {
+            const now = performance.now();
+            const elapsed = now - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            // Ease-in-out function for smoother animation
+            const easeProgress = progress < 0.5 ? 
+                2 * progress * progress : 
+                -1 + (4 - 2 * progress) * progress;
+            
+            // Interpolate camera position
+            this.camera.position.lerpVectors(
+                startPosition,
+                targetPosition,
+                easeProgress
+            );
+            
+            // Interpolate camera target
+            this.controls.target.lerpVectors(
+                startTarget,
+                targetLookAt,
+                easeProgress
+            );
+            
+            // Update controls
+            this.controls.update();
+            
+            // Continue animation if not complete
+            if (progress < 1) {
+                requestAnimationFrame(animateCamera);
+            } else {
+                // Animation complete - restore controls
+                if (this.controls) {
+                    this.controls.enabled = true;
+                }
+                
+                this.isCameraAnimating = false;
+                
+                // Execute callback if provided
+                if (callback && typeof callback === 'function') {
+                    callback();
+                }
+            }
+        };
+        
+        // Start animation
+        animateCamera();
     }
     
-    // Focus on a specific marker (start or end)
-    focusOnMarker(markerType) {
-        console.log(`Attempting to focus on marker: ${markerType}`);
-        
-        // FIXED: Handle both old marker ID format and new format
-        const markerID = markerType.endsWith('-marker') ? markerType : `${markerType}-marker`;
-        
-        if (!this.markerGroups[markerID]) {
-            console.warn(`Marker ${markerID} not found for focusing`);
-            return;
-        }
-        
+    // Focus on a specific marker by ID with animation
+    focusOnMarker(markerID, duration = 1000) {
         const markerGroup = this.markerGroups[markerID];
         
-        // Find the pin head in the marker group (sphere at index 0)
+        if (!markerGroup) {
+            this.log(`Error: Marker "${markerID}" not found`);
+            return false;
+        }
+        
+        // Get marker position
         let markerPosition;
-        if (markerGroup.children.length > 0) {
-            const pinHead = markerGroup.children.find(child => 
-                child.geometry && child.geometry.type === 'SphereGeometry');
-                
-            if (pinHead) {
-                markerPosition = new THREE.Vector3();
-                pinHead.getWorldPosition(markerPosition);
-                console.log(`Found marker position from pin head: ${markerPosition.x.toFixed(2)}, ${markerPosition.y.toFixed(2)}, ${markerPosition.z.toFixed(2)}`);
+        
+        // Find first mesh in the group to get position
+        markerGroup.traverse((object) => {
+            if (!markerPosition && object.isMesh) {
+                markerPosition = object.position.clone();
             }
-        }
-        
-        // If we couldn't find the pin head, use the group's position
-        if (!markerPosition) {
-            markerPosition = new THREE.Vector3();
-            markerGroup.getWorldPosition(markerPosition);
-            console.log(`Using marker group position: ${markerPosition.x.toFixed(2)}, ${markerPosition.y.toFixed(2)}, ${markerPosition.z.toFixed(2)}`);
-        }
-        
-        // Scale the position out slightly to get a good view
-        const direction = markerPosition.clone().normalize();
-        const cameraDistance = this.earthRadius * 1.8;
-        const targetPosition = direction.multiplyScalar(cameraDistance);
-        
-        console.log(`Moving camera to: ${targetPosition.x.toFixed(2)}, ${targetPosition.y.toFixed(2)}, ${targetPosition.z.toFixed(2)}`);
-        
-        // Animate camera to this position
-        this.animateCameraToPosition(targetPosition, 1000, () => {
-            console.log(`Successfully focused on ${markerID}`);
         });
+        
+        if (!markerPosition) {
+            this.log(`Error: Could not find position for marker "${markerID}"`);
+            return false;
+        }
+        
+        // Calculate position to view the marker from a good angle
+        const cameraDistance = 2.5;
+        const cameraTarget = markerPosition.clone();
+        
+        // Position slightly offset from the direct line to the center
+        const offsetDirection = markerPosition.clone().normalize();
+        const cameraPosition = markerPosition.clone().add(
+            offsetDirection.multiplyScalar(cameraDistance - 1)
+        );
+        
+        // Ensure we're not inside the Earth
+        if (cameraPosition.length() < this.earthRadius) {
+            cameraPosition.normalize().multiplyScalar(this.earthRadius * 1.5);
+        }
+        
+        // Animate camera to focus position
+        this.animateCameraToPosition(cameraPosition, cameraTarget, duration, () => {
+            // Pulse the marker when focus is complete
+            this.pulseMarker(markerID);
+        });
+        
+        return true;
+    }
+    
+    // Focus camera on a specific 3D position
+    focusOnLocation(position, duration = 1000) {
+        if (!position) {
+            this.log('Error: Invalid position for camera focus');
+            return false;
+        }
+        
+        // Calculate new camera position
+        const cameraDistance = 2.0;
+        const direction = position.clone().normalize();
+        const cameraPosition = direction.clone().multiplyScalar(cameraDistance);
+        
+        // Animate camera to the new position
+        this.animateCameraToPosition(cameraPosition, position, duration);
+        
+        return true;
+    }
+    
+    // Reset camera to default view
+    resetCamera(animate = true) {
+        const defaultPosition = new THREE.Vector3(0, 0, 3);
+        const defaultTarget = new THREE.Vector3(0, 0, 0);
+        
+        if (animate) {
+            this.animateCameraToPosition(defaultPosition, defaultTarget);
+        } else {
+            this.camera.position.copy(defaultPosition);
+            this.controls.target.copy(defaultTarget);
+            this.controls.update();
+        }
+        
+        // Enable auto-rotate for the default view
+        if (this.controls) {
+            this.controls.autoRotate = true;
+        }
+    }
+    
+    // Add a pulsing effect to the marker for better visibility
+    pulseMarker(markerID, scale = 1.0) {
+        const markerGroup = this.markerGroups[markerID];
+        if (!markerGroup) return;
+        
+        // Find the halo/ring element
+        const halo = markerGroup.children.find(child => 
+            child.geometry && child.geometry.type === 'RingGeometry');
+            
+        if (!halo) return;
+        
+        // Store original scale
+        const originalScale = halo.scale.clone();
+        
+        // Animate scale
+        let pulseTime = 0;
+        const pulseDuration = 2000; // 2 seconds
+        const pulseAnimation = () => {
+            pulseTime += 16; // Approx 60fps
+            const t = pulseTime / pulseDuration;
+            
+            if (t < 1) {
+                // Sin wave for smooth pulsing (0.8 to 1.5 range)
+                const pulseScale = 0.8 + 0.7 * Math.sin(t * Math.PI * 4);
+                halo.scale.set(pulseScale * scale, pulseScale * scale, pulseScale * scale);
+                
+                requestAnimationFrame(pulseAnimation);
+            } else {
+                // Restore original scale
+                halo.scale.copy(originalScale);
+            }
+        };
+        
+        pulseAnimation();
     }
     
     // Add a new method for setting up event listeners
     setupEventListeners() {
         console.log('Setting up event listeners for globe clicks');
         
+        // Track click and drag events to distinguish between clicks and drags
+        let isDragging = false;
+        let clickStartTime = 0;
+        
+        this.renderer.domElement.addEventListener('mousedown', () => {
+            isDragging = false;
+            clickStartTime = Date.now();
+        });
+        
+        this.renderer.domElement.addEventListener('mousemove', () => {
+            // Consider dragging if mouse moves during a click
+            if (Date.now() - clickStartTime > 100) {
+                isDragging = true;
+            }
+        });
+        
         // Add click event listener to the renderer's canvas
         this.renderer.domElement.addEventListener('click', (event) => {
+            // Ignore if we're dragging the globe
+            if (isDragging) {
+                console.log('Ignoring click because user was dragging');
+                return;
+            }
+            
             if (this.isAnimating) {
                 console.log('Ignoring click during animation');
                 return;
@@ -1111,31 +1531,23 @@ class EarthVisualizer {
             
             console.log('Mouse coords:', this.mouse.x, this.mouse.y);
             
-            // FIXED: Create a temporary raycaster for this specific click
+            // Create a temporary raycaster for this specific click
             const raycaster = new THREE.Raycaster();
             raycaster.setFromCamera(this.mouse, this.camera);
             
-            // Cast ray against ALL objects in the scene that are meshes
-            const meshes = [];
-            this.scene.traverse((object) => {
-                if (object instanceof THREE.Mesh && 
-                    object !== this.traveler && 
-                    !this.markerGroups['start-marker']?.children.includes(object) && 
-                    !this.markerGroups['end-marker']?.children.includes(object)) {
-                    meshes.push(object);
-                }
-            });
+            // Simplified approach - just use the earth and clouds directly
+            // This is more reliable than traversing the entire scene
+            const objectsToCheck = [];
+            if (this.earth) objectsToCheck.push(this.earth);
+            if (this.clouds) objectsToCheck.push(this.clouds);
             
-            // Log all detected meshes for debugging
-            console.log('Detected meshes for raycasting:', meshes.length);
-            
-            // Intersect with any mesh in the scene
-            const intersects = raycaster.intersectObjects(meshes);
+            // Intersect with any target object
+            const intersects = raycaster.intersectObjects(objectsToCheck);
             console.log('Intersections found:', intersects.length);
             
             // If something was clicked
             if (intersects.length > 0) {
-                // Get the intersection point
+                // Get the intersection point and normalize to get direction from center
                 const point = intersects[0].point.clone().normalize();
                 
                 // Convert to latitude and longitude
@@ -1165,7 +1577,7 @@ class EarthVisualizer {
                 console.log('Dispatching location-selected event');
                 this.container.dispatchEvent(locationEvent);
                 
-                // FIXED: Add visual feedback for successful click
+                // Show visual feedback for successful click
                 this.showClickFeedback(intersects[0].point);
                 
                 return true;
@@ -1183,21 +1595,15 @@ class EarthVisualizer {
             this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
             this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
             
-            // FIXED: Use the same broad raycasting approach for consistency
+            // Use simplified approach for hover detection too
             const raycaster = new THREE.Raycaster();
             raycaster.setFromCamera(this.mouse, this.camera);
             
-            const meshes = [];
-            this.scene.traverse((object) => {
-                if (object instanceof THREE.Mesh && 
-                    object !== this.traveler && 
-                    !this.markerGroups['start-marker']?.children.includes(object) && 
-                    !this.markerGroups['end-marker']?.children.includes(object)) {
-                    meshes.push(object);
-                }
-            });
+            const objectsToCheck = [];
+            if (this.earth) objectsToCheck.push(this.earth);
+            if (this.clouds) objectsToCheck.push(this.clouds);
             
-            const intersects = raycaster.intersectObjects(meshes);
+            const intersects = raycaster.intersectObjects(objectsToCheck);
             
             if (intersects.length > 0) {
                 this.renderer.domElement.style.cursor = 'pointer';
@@ -1207,62 +1613,340 @@ class EarthVisualizer {
         });
     }
     
-    // ADDED: Visual feedback for successful click
+    // Visual feedback for successful click
     showClickFeedback(position) {
-        // Create a small sphere at the clicked position
-        const geometry = new THREE.SphereGeometry(0.05, 16, 16);
+        // Create a small pulse at the clicked position
+        const geometry = new THREE.SphereGeometry(0.03, 16, 16);
         const material = new THREE.MeshBasicMaterial({ 
             color: 0xffff00,
             transparent: true,
-            opacity: 0.8
+            opacity: 0.9
         });
         
         const feedback = new THREE.Mesh(geometry, material);
         feedback.position.copy(position);
         this.scene.add(feedback);
         
-        // Create expanding ring
-        const ringGeometry = new THREE.RingGeometry(0.05, 0.07, 32);
-        const ringMaterial = new THREE.MeshBasicMaterial({
-            color: 0xffff00,
+        // Create multiple expanding rings for better visual feedback
+        const createRing = (size, delay) => {
+            setTimeout(() => {
+                const ringGeometry = new THREE.RingGeometry(0.03, 0.05, 32);
+                const ringMaterial = new THREE.MeshBasicMaterial({
+                    color: 0xffff00,
+                    transparent: true,
+                    opacity: 0.8,
+                    side: THREE.DoubleSide
+                });
+                
+                const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+                ring.position.copy(position);
+                
+                // Make ring face the camera
+                ring.lookAt(this.camera.position);
+                this.scene.add(ring);
+                
+                // Animate and remove
+                let scale = 1;
+                let opacity = 0.8;
+                
+                const expandRing = () => {
+                    scale += 0.06;
+                    opacity -= 0.02;
+                    
+                    ring.scale.set(scale, scale, scale);
+                    ringMaterial.opacity = opacity;
+                    
+                    if (opacity > 0) {
+                        requestAnimationFrame(expandRing);
+                    } else {
+                        this.scene.remove(ring);
+                        ring.geometry.dispose();
+                        ringMaterial.dispose();
+                    }
+                };
+                
+                expandRing();
+            }, delay);
+        };
+        
+        // Create multiple rings with delays for a ripple effect
+        createRing(0.05, 0);
+        createRing(0.06, 150);
+        createRing(0.08, 300);
+        
+        // Add a bright flash that quickly fades out
+        const flashGeometry = new THREE.SphereGeometry(0.06, 16, 16);
+        const flashMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
             transparent: true,
-            opacity: 0.6,
-            side: THREE.DoubleSide
+            opacity: 0.9
         });
         
-        const ring = new THREE.Mesh(ringGeometry, ringMaterial);
-        ring.position.copy(position);
-        ring.lookAt(0, 0, 0); // Face toward center
-        this.scene.add(ring);
+        const flash = new THREE.Mesh(flashGeometry, flashMaterial);
+        flash.position.copy(position);
+        this.scene.add(flash);
         
-        // Animate and remove
-        let scale = 1;
-        let opacity = 0.8;
-        
-        const expandRing = () => {
-            scale += 0.08;
-            opacity -= 0.03;
+        // Animate flash
+        let flashOpacity = 0.9;
+        const fadeFlash = () => {
+            flashOpacity -= 0.1;
+            flashMaterial.opacity = flashOpacity;
             
-            ring.scale.set(scale, scale, scale);
-            ringMaterial.opacity = opacity;
-            
-            if (opacity > 0) {
-                requestAnimationFrame(expandRing);
+            if (flashOpacity > 0) {
+                requestAnimationFrame(fadeFlash);
             } else {
-                this.scene.remove(ring);
-                ring.geometry.dispose();
-                ring.material.dispose();
+                this.scene.remove(flash);
+                flash.geometry.dispose();
+                flashMaterial.dispose();
             }
         };
         
-        expandRing();
+        fadeFlash();
         
-        // Remove feedback after animation
+        // Remove main feedback after a short delay
         setTimeout(() => {
             this.scene.remove(feedback);
             feedback.geometry.dispose();
-            feedback.material.dispose();
-        }, 500);
+            material.dispose();
+        }, 800);
+    }
+    
+    // Handle interactions with Earth and markers
+    setupInteractions() {
+        this.log('Setting up Earth interactions');
+        
+        // Raycaster for detecting clicks
+        this.raycaster = new THREE.Raycaster();
+        this.mouse = new THREE.Vector2();
+        
+        // Hover state tracking
+        this.hoveredObject = null;
+        this.originalMaterialColor = null;
+        this.isMouseDown = false;
+        
+        // Add event listeners
+        this.container.addEventListener('mousemove', this.onMouseMove.bind(this));
+        this.container.addEventListener('mousedown', this.onMouseDown.bind(this));
+        this.container.addEventListener('mouseup', this.onMouseUp.bind(this));
+        this.container.addEventListener('click', this.onClick.bind(this));
+        
+        // Touch support for mobile
+        this.container.addEventListener('touchstart', this.onTouchStart.bind(this));
+        this.container.addEventListener('touchend', this.onTouchEnd.bind(this));
+        
+        // Add cursor style to container
+        this.container.style.cursor = 'grab';
+    }
+    
+    // Convert screen coordinates to normalized device coordinates
+    getNormalizedMousePosition(event) {
+        const rect = this.container.getBoundingClientRect();
+        const x = ((event.clientX - rect.left) / this.container.clientWidth) * 2 - 1;
+        const y = -((event.clientY - rect.top) / this.container.clientHeight) * 2 + 1;
+        return { x, y };
+    }
+    
+    // Mouse move handler
+    onMouseMove(event) {
+        // Update cursor position
+        const pos = this.getNormalizedMousePosition(event);
+        this.mouse.x = pos.x;
+        this.mouse.y = pos.y;
+        
+        // Don't do hover effects during animation or when dragging
+        if (this.isAnimating || this.isMouseDown) return;
+        
+        // Update cursor and check for hoverable objects
+        this.checkHoverObjects();
+    }
+    
+    // Mouse down handler
+    onMouseDown(event) {
+        this.isMouseDown = true;
+        this.container.style.cursor = 'grabbing';
+    }
+    
+    // Mouse up handler
+    onMouseUp(event) {
+        this.isMouseDown = false;
+        this.container.style.cursor = 'grab';
+    }
+    
+    // Handle clicks on Earth and markers
+    onClick(event) {
+        // Don't handle clicks during animation
+        if (this.isAnimating) return;
+        
+        const pos = this.getNormalizedMousePosition(event);
+        this.mouse.x = pos.x;
+        this.mouse.y = pos.y;
+        
+        // Update the raycaster with the camera and mouse position
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+        
+        // Check for intersections with markers first (higher priority)
+        const markerObjects = [];
+        Object.values(this.markerGroups).forEach(group => {
+            group.traverse(child => {
+                if (child.isMesh) markerObjects.push(child);
+            });
+        });
+        
+        const markerIntersects = this.raycaster.intersectObjects(markerObjects);
+        
+        if (markerIntersects.length > 0) {
+            // Find which marker was clicked
+            let markerID = null;
+            Object.entries(this.markerGroups).forEach(([id, group]) => {
+                if (group.getObjectById(markerIntersects[0].object.id)) {
+                    markerID = id;
+                }
+            });
+            
+            if (markerID) {
+                this.log(`Clicked on marker: ${markerID}`);
+                this.focusOnMarker(markerID);
+                // Pulse the marker when clicked
+                this.pulseMarker(markerID);
+                
+                // Dispatch a custom event
+                const event = new CustomEvent('marker-clicked', { 
+                    detail: { markerID } 
+                });
+                this.container.dispatchEvent(event);
+                return;
+            }
+        }
+        
+        // If no marker was clicked, check for Earth clicks
+        const earthIntersects = this.raycaster.intersectObject(this.earth);
+        
+        if (earthIntersects.length > 0) {
+            const point = earthIntersects[0].point;
+            
+            // Convert to latitude/longitude
+            const latLng = this.pointToLatLng(point);
+            
+            this.log(`Clicked on Earth at lat: ${latLng.lat.toFixed(2)}, lng: ${latLng.lng.toFixed(2)}`);
+            
+            // Dispatch a custom event
+            const event = new CustomEvent('earth-clicked', { 
+                detail: { 
+                    lat: latLng.lat, 
+                    lng: latLng.lng,
+                    point: point
+                }
+            });
+            this.container.dispatchEvent(event);
+        }
+    }
+    
+    // Handle touch start
+    onTouchStart(event) {
+        // Prevent default to avoid scrolling
+        event.preventDefault();
+        
+        if (event.touches.length === 1) {
+            const touch = event.touches[0];
+            // Convert touch to mouse event
+            const mouseEvent = {
+                clientX: touch.clientX,
+                clientY: touch.clientY
+            };
+            
+            this.onMouseDown(mouseEvent);
+        }
+    }
+    
+    // Handle touch end
+    onTouchEnd(event) {
+        // Prevent default to avoid scrolling
+        event.preventDefault();
+        
+        this.onMouseUp({});
+        
+        // Only handle taps (clicks)
+        if (event.changedTouches.length === 1) {
+            const touch = event.changedTouches[0];
+            // Convert touch to mouse event
+            const mouseEvent = {
+                clientX: touch.clientX,
+                clientY: touch.clientY
+            };
+            
+            this.onClick(mouseEvent);
+        }
+    }
+    
+    // Check for objects under the mouse cursor and update hover state
+    checkHoverObjects() {
+        // Update the raycaster with the current mouse position
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+        
+        // First check for interactions with markers
+        const markerObjects = [];
+        Object.values(this.markerGroups).forEach(group => {
+            group.traverse(child => {
+                if (child.isMesh) markerObjects.push(child);
+            });
+        });
+        
+        // Check for intersections with markers (more important)
+        const markerIntersects = this.raycaster.intersectObjects(markerObjects);
+        
+        // Then check for interactions with the Earth
+        const earthIntersects = this.raycaster.intersectObject(this.earth);
+        
+        // Restore previous hovered object's material if any
+        if (this.hoveredObject && this.originalMaterialColor) {
+            this.hoveredObject.material.emissive.setHex(this.originalMaterialColor);
+            this.hoveredObject = null;
+            this.originalMaterialColor = null;
+            
+            // Reset cursor
+            this.container.style.cursor = 'grab';
+        }
+        
+        // Check for marker intersections first (higher priority)
+        if (markerIntersects.length > 0) {
+            const object = markerIntersects[0].object;
+            this.hoveredObject = object;
+            
+            // Only store original color if it has an emissive property
+            if (object.material && object.material.emissive) {
+                this.originalMaterialColor = object.material.emissive.getHex();
+                
+                // Highlight object with lighter color
+                const newColor = object.material.color.getHex();
+                object.material.emissive.setHex(newColor);
+                
+                // Change cursor to indicate clickable
+                this.container.style.cursor = 'pointer';
+                return;
+            }
+        }
+        
+        // If no marker interaction, check for Earth interactions
+        if (earthIntersects.length > 0) {
+            // Change cursor to indicate Earth is clickable
+            this.container.style.cursor = 'crosshair';
+            return;
+        }
+    }
+    
+    // Convert 3D point to latitude & longitude
+    pointToLatLng(point) {
+        // Normalize the point to get a direction from the center
+        const direction = point.clone().normalize();
+        
+        // Calculate latitude (-90 to 90) and longitude (-180 to 180)
+        const lat = 90 - Math.acos(direction.y) * (180 / Math.PI);
+        let lng = Math.atan2(direction.z, direction.x) * (180 / Math.PI);
+        
+        // Adjust longitude to match standard mapping (-180 to 180)
+        if (lng > 180) lng -= 360;
+        
+        return { lat, lng };
     }
 }
 

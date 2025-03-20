@@ -21,21 +21,40 @@ document.addEventListener('DOMContentLoaded', () => {
     // Sample location buttons
     const sampleButtons = document.querySelectorAll('.sample-btn');
     
-    // Add event listeners for sample location buttons
+    // Debounce function to limit frequency of function calls
+    function debounce(func, wait) {
+        let timeout;
+        return function() {
+            const context = this;
+            const args = arguments;
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(context, args), wait);
+        };
+    }
+    
+    // Add event listeners for sample location buttons with throttling to prevent double-clicks
     sampleButtons.forEach(button => {
+        // Track if action is in progress to prevent multiple rapid clicks
+        let actionInProgress = false;
+        
         button.addEventListener('click', () => {
-            console.log('Sample location button clicked');
+            // Prevent multiple rapid clicks
+            if (actionInProgress) return;
+            actionInProgress = true;
+            
+            // Add visual feedback
+            button.classList.add('active');
+            
+            console.log('Sample location button clicked:', button.textContent);
             
             const lat = parseFloat(button.getAttribute('data-lat'));
             const lng = parseFloat(button.getAttribute('data-lng'));
             const locationName = button.textContent;
             
-            console.log(`Selected sample location: ${locationName} (${lat}, ${lng})`);
-            
             // Set location directly without API calls
             startLocation = { lat, lng };
             
-            // Update UI
+            // Update UI immediately
             startCoords.textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
             startAddress.textContent = locationName;
             
@@ -44,22 +63,23 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Update end location UI
             endCoords.textContent = `${endLocation.lat.toFixed(6)}, ${endLocation.lng.toFixed(6)}`;
+            endAddress.textContent = 'Antipode of ' + locationName;
             
             try {
                 // Set markers on the earth visualization
-                console.log('Setting start marker on visualization');
+                console.log('Setting start marker at:', lat, lng);
                 earthVisualization.setMarkerPosition('start-marker', lat, lng, true);
                 
-                console.log('Setting end marker on visualization');
+                console.log('Setting end marker at:', endLocation.lat, endLocation.lng);
                 earthVisualization.setMarkerPosition('end-marker', endLocation.lat, endLocation.lng, false);
                 
-                // Try to use the geocoder for end address, but provide a fallback
+                // Try to use the geocoder for end address in the background
                 reverseGeocode(endLocation.lat, endLocation.lng)
                     .then(address => {
-                        endAddress.textContent = address || 'Antipode of ' + locationName;
+                        if (address) endAddress.textContent = address;
                     })
                     .catch(() => {
-                        endAddress.textContent = 'Antipode of ' + locationName;
+                        // Keep fallback address
                     });
                 
                 // Enable digging
@@ -69,34 +89,64 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log('Sample location successfully set');
             } catch (err) {
                 console.error('Error setting location from sample button:', err);
+                alert('Error setting location. Please try again.');
+            } finally {
+                // Remove visual feedback after a delay
+                setTimeout(() => {
+                    button.classList.remove('active');
+                    actionInProgress = false;
+                }, 500);
             }
         });
     });
     
-    // Add event listeners for the focus buttons
+    // Add event listeners for the focus buttons with debouncing
     const focusStartButton = document.getElementById('focus-start');
     const focusEndButton = document.getElementById('focus-end');
     
+    // Create debounced versions of focus functions to prevent rapid clicking
+    const debouncedFocusStart = debounce(() => {
+        console.log('Focusing on start marker');
+        if (earthVisualization && typeof earthVisualization.focusOnMarker === 'function') {
+            focusStartButton.disabled = true;
+            focusStartButton.classList.add('active');
+            
+            earthVisualization.focusOnMarker('start-marker');
+            
+            // Re-enable after animation completes
+            setTimeout(() => {
+                focusStartButton.disabled = false;
+                focusStartButton.classList.remove('active');
+            }, 1600); // Slightly longer than animation duration
+        } else {
+            console.error('Earth visualization or focusOnMarker method not available');
+        }
+    }, 300);
+    
+    const debouncedFocusEnd = debounce(() => {
+        console.log('Focusing on end marker');
+        if (earthVisualization && typeof earthVisualization.focusOnMarker === 'function') {
+            focusEndButton.disabled = true;
+            focusEndButton.classList.add('active');
+            
+            earthVisualization.focusOnMarker('end-marker');
+            
+            // Re-enable after animation completes
+            setTimeout(() => {
+                focusEndButton.disabled = false;
+                focusEndButton.classList.remove('active');
+            }, 1600); // Slightly longer than animation duration
+        } else {
+            console.error('Earth visualization or focusOnMarker method not available');
+        }
+    }, 300);
+    
     if (focusStartButton) {
-        focusStartButton.addEventListener('click', () => {
-            console.log('Focus start button clicked');
-            if (earthVisualization && typeof earthVisualization.focusOnMarker === 'function') {
-                earthVisualization.focusOnMarker('start-marker');
-            } else {
-                console.error('Earth visualization or focusOnMarker method not available');
-            }
-        });
+        focusStartButton.addEventListener('click', debouncedFocusStart);
     }
     
     if (focusEndButton) {
-        focusEndButton.addEventListener('click', () => {
-            console.log('Focus end button clicked');
-            if (earthVisualization && typeof earthVisualization.focusOnMarker === 'function') {
-                earthVisualization.focusOnMarker('end-marker');
-            } else {
-                console.error('Earth visualization or focusOnMarker method not available');
-            }
-        });
+        focusEndButton.addEventListener('click', debouncedFocusEnd);
     }
     
     // Store starting location
