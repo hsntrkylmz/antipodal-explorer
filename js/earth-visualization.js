@@ -179,9 +179,16 @@ class EarthVisualizer {
     loadTextures() {
         return new Promise((resolve, reject) => {
             try {
+                // Check that THREE is properly loaded
+                if (typeof THREE === 'undefined') {
+                    console.error('THREE is not defined. Make sure THREE.js is loaded before initializing the EarthVisualizer.');
+                    throw new Error('THREE.js library not loaded properly');
+                }
+                
                 const textureLoader = new THREE.TextureLoader();
                 textureLoader.crossOrigin = "Anonymous";
                 
+                // Initialize empty texture placeholders
                 this.textures = {
                     earthMap: null,
                     earthBumpMap: null,
@@ -189,37 +196,109 @@ class EarthVisualizer {
                     cloudsMap: null
                 };
                 
-                // Use reliable CDN-hosted texture maps
+                // Use reliable CDN-hosted texture maps with fallbacks
                 const textureURLs = {
-                    earthMap: 'https://unpkg.com/three-globe@2.24.4/example/img/earth-blue-marble.jpg',
-                    earthBumpMap: 'https://unpkg.com/three-globe@2.24.4/example/img/earth-topology.png',
-                    earthSpecularMap: 'https://unpkg.com/three-globe@2.24.4/example/img/earth-water.png',
-                    cloudsMap: 'https://unpkg.com/three-globe@2.24.4/example/img/earth-clouds.png'
+                    earthMap: [
+                        'https://unpkg.com/three-globe@2.24.4/example/img/earth-blue-marble.jpg',
+                        'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_atmos_2048.jpg',
+                        'https://www.solarsystemscope.com/textures/download/2k_earth_daymap.jpg'
+                    ],
+                    earthBumpMap: [
+                        'https://unpkg.com/three-globe@2.24.4/example/img/earth-topology.png',
+                        'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_normal_2048.jpg'
+                    ],
+                    earthSpecularMap: [
+                        'https://unpkg.com/three-globe@2.24.4/example/img/earth-water.png',
+                        'https://www.solarsystemscope.com/textures/download/2k_earth_specular_map.jpg'
+                    ],
+                    cloudsMap: [
+                        'https://unpkg.com/three-globe@2.24.4/example/img/earth-clouds.png',
+                        'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_clouds_2048.jpg',
+                        'https://www.solarsystemscope.com/textures/download/2k_earth_clouds.jpg'
+                    ]
                 };
                 
-                // Load all textures
+                // Debug flag for texture loading
+                console.log('Starting to load textures with THREE.TextureLoader...');
+                
+                // Count of successfully loaded textures
                 let loadedCount = 0;
                 const totalTextures = Object.keys(textureURLs).length;
                 
-                for (const [key, url] of Object.entries(textureURLs)) {
+                // Function to try loading a texture from multiple URLs
+                const tryLoadingTexture = (key, urlIndex = 0) => {
+                    // If we've tried all URLs for this texture
+                    if (urlIndex >= textureURLs[key].length) {
+                        console.error(`Failed to load ${key} after trying all URLs`);
+                        // Create a placeholder colored texture
+                        const canvas = document.createElement('canvas');
+                        canvas.width = 256;
+                        canvas.height = 256;
+                        const ctx = canvas.getContext('2d');
+                        
+                        // Different colors for different texture types
+                        const colors = {
+                            earthMap: '#1565C0',
+                            earthBumpMap: '#555555',
+                            earthSpecularMap: '#AAAAAA',
+                            cloudsMap: '#FFFFFF'
+                        };
+                        
+                        ctx.fillStyle = colors[key] || '#AAAAAA';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        
+                        // Add some text to indicate this is a fallback
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.font = '20px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('Texture Not Available', canvas.width/2, canvas.height/2);
+                        
+                        // Create texture from canvas
+                        const texture = new THREE.CanvasTexture(canvas);
+                        this.textures[key] = texture;
+                        
+                        loadedCount++;
+                        console.log(`Created fallback texture for ${key} (${loadedCount}/${totalTextures})`);
+                        
+                        if (loadedCount === totalTextures) {
+                            console.log('All textures loaded using fallbacks where needed');
+                            resolve();
+                        }
+                        return;
+                    }
+                    
+                    const url = textureURLs[key][urlIndex];
+                    console.log(`Attempting to load ${key} from ${url}`);
+                    
                     textureLoader.load(
                         url,
                         (texture) => {
+                            // Success
                             this.textures[key] = texture;
                             loadedCount++;
-                            console.log(`Loaded texture: ${key} (${loadedCount}/${totalTextures})`);
+                            console.log(`Loaded texture: ${key} from ${url} (${loadedCount}/${totalTextures})`);
                             
                             if (loadedCount === totalTextures) {
                                 console.log('All textures loaded successfully');
                                 resolve();
                             }
                         },
-                        undefined,
+                        // Progress callback
+                        (xhr) => {
+                            console.log(`${key} ${Math.round((xhr.loaded / xhr.total) * 100)}% loaded`);
+                        },
+                        // Error callback
                         (error) => {
-                            console.error(`Failed to load texture ${key}:`, error);
-                            reject(error);
+                            console.warn(`Failed to load texture ${key} from ${url}:`, error);
+                            // Try the next URL
+                            tryLoadingTexture(key, urlIndex + 1);
                         }
                     );
+                };
+                
+                // Start loading all textures
+                for (const key of Object.keys(textureURLs)) {
+                    tryLoadingTexture(key);
                 }
             } catch (error) {
                 console.error('Error in loadTextures:', error);
@@ -1063,6 +1142,31 @@ class EarthVisualizer {
 window.addEventListener('DOMContentLoaded', () => {
     console.log('DOM loaded, initializing Earth visualizer');
     
+    // Global error handler for THREE.js issues
+    window.handleThreeJsError = function() {
+        console.error('THREE.js runtime error detected');
+        const container = document.querySelector('.earth-visualization');
+        if (container) {
+            container.innerHTML = `
+                <div style="color: white; text-align: center; padding: 20px;">
+                    <p>Error: THREE.js encountered a runtime error.</p>
+                    <p>Please try refreshing the page or use a different browser.</p>
+                    <button id="reload-threejs" style="padding: 10px 20px; margin-top: 15px; background-color: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                        Reload Earth Viewer
+                    </button>
+                </div>
+            `;
+            
+            // Add reload button functionality
+            const reloadBtn = document.getElementById('reload-threejs');
+            if (reloadBtn) {
+                reloadBtn.addEventListener('click', function() {
+                    location.reload();
+                });
+            }
+        }
+    };
+    
     // Check if THREE is loaded
     if (typeof THREE === 'undefined') {
         console.error('THREE.js is not loaded!');
@@ -1071,18 +1175,48 @@ window.addEventListener('DOMContentLoaded', () => {
             container.innerHTML = `
                 <div style="color: white; text-align: center; padding: 20px;">
                     <p>Error: THREE.js library failed to load.</p>
-                    <p>Please check your internet connection and try again.</p>
+                    <p>Please check your internet connection and try refreshing the page.</p>
+                    <p>If the problem persists, try a different browser with WebGL support.</p>
+                    <button id="reload-threejs" style="padding: 10px 20px; margin-top: 15px; background-color: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                        Reload Earth Viewer
+                    </button>
                 </div>
             `;
+            
+            // Add reload button functionality
+            const reloadBtn = document.getElementById('reload-threejs');
+            if (reloadBtn) {
+                reloadBtn.addEventListener('click', function() {
+                    location.reload();
+                });
+            }
         }
         return;
     }
     
-    // Create global instance for other scripts to use
-    // Note: This is a fallback. The app.js should create its own instance.
-    const container = document.querySelector('.earth-visualization');
-    if (container && !window.earthVisualizer) {
-        window.earthVisualizer = new EarthVisualizer(container);
-        console.log('Created global Earth visualizer instance');
+    try {
+        // Try to create a WebGL renderer to test WebGL support
+        const testRenderer = new THREE.WebGLRenderer();
+        testRenderer.dispose();
+        
+        // Create global instance for other scripts to use
+        // Note: This is a fallback. The app.js should create its own instance.
+        const container = document.querySelector('.earth-visualization');
+        if (container && !window.earthVisualizer) {
+            window.earthVisualizer = new EarthVisualizer(container);
+            console.log('Created global Earth visualizer instance');
+        }
+    } catch (error) {
+        console.error('WebGL initialization error:', error);
+        const container = document.querySelector('.earth-visualization');
+        if (container) {
+            container.innerHTML = `
+                <div style="color: white; text-align: center; padding: 20px;">
+                    <p>Error initializing WebGL: ${error.message || 'Unknown error'}</p>
+                    <p>Please try using a different browser with WebGL support.</p>
+                    <p>Check that hardware acceleration is enabled in your browser settings.</p>
+                </div>
+            `;
+        }
     }
 });

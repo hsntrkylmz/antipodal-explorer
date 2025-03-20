@@ -11,8 +11,54 @@
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
     
     <!-- Load THREE.js scripts in head for earlier loading -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js"></script>
+    <script>
+        // Check if THREE.js is loaded correctly
+        window.addEventListener('error', function(e) {
+            if (e.target.src && e.target.src.includes('three.min.js')) {
+                console.error('Failed to load THREE.js from primary source, trying fallback...');
+                loadFallbackScripts();
+            }
+        }, true);
+        
+        // Function to load fallback THREE.js scripts if the primary ones fail
+        function loadFallbackScripts() {
+            const container = document.querySelector('.earth-visualization');
+            if (container) {
+                container.innerHTML = '<div style="color: white; text-align: center; padding: 20px;"><p>Attempting to load THREE.js from alternate sources...</p></div>';
+            }
+            
+            // Remove failed scripts
+            document.querySelectorAll('script[data-threejs]').forEach(script => script.remove());
+            
+            // Add fallback scripts
+            const threeScript = document.createElement('script');
+            threeScript.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js';
+            threeScript.setAttribute('data-threejs', 'core-fallback');
+            document.head.appendChild(threeScript);
+            
+            threeScript.onload = function() {
+                const orbitScript = document.createElement('script');
+                orbitScript.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js';
+                orbitScript.setAttribute('data-threejs', 'orbit-fallback');
+                document.head.appendChild(orbitScript);
+                
+                orbitScript.onload = function() {
+                    if (container) {
+                        container.innerHTML = '';
+                        
+                        // Reinitialize if EarthVisualizer exists
+                        if (typeof EarthVisualizer === 'function') {
+                            setTimeout(() => {
+                                window.earthVisualizer = new EarthVisualizer(container);
+                            }, 500);
+                        }
+                    }
+                };
+            };
+        }
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" data-threejs="core"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js" data-threejs="orbit"></script>
 </head>
 <body>
     <div class="container">
