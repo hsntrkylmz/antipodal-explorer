@@ -24,9 +24,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Add event listeners for sample location buttons
     sampleButtons.forEach(button => {
         button.addEventListener('click', () => {
+            console.log('Sample location button clicked');
+            
             const lat = parseFloat(button.getAttribute('data-lat'));
             const lng = parseFloat(button.getAttribute('data-lng'));
             const locationName = button.textContent;
+            
+            console.log(`Selected sample location: ${locationName} (${lat}, ${lng})`);
             
             // Set location directly without API calls
             startLocation = { lat, lng };
@@ -41,22 +45,31 @@ document.addEventListener('DOMContentLoaded', () => {
             // Update end location UI
             endCoords.textContent = `${endLocation.lat.toFixed(6)}, ${endLocation.lng.toFixed(6)}`;
             
-            // Try to use the geocoder for end address, but provide a fallback
-            reverseGeocode(endLocation.lat, endLocation.lng)
-                .then(address => {
-                    endAddress.textContent = address || 'Antipode of ' + locationName;
-                })
-                .catch(() => {
-                    endAddress.textContent = 'Antipode of ' + locationName;
-                });
-            
-            // Set markers
-            earthVisualization.setMarkerPosition('start-marker', lat, lng, true);
-            earthVisualization.setMarkerPosition('end-marker', endLocation.lat, endLocation.lng, false);
-            
-            // Enable digging
-            digButton.disabled = false;
-            endLocation.classList.remove('hidden');
+            try {
+                // Set markers on the earth visualization
+                console.log('Setting start marker on visualization');
+                earthVisualization.setMarkerPosition('start-marker', lat, lng, true);
+                
+                console.log('Setting end marker on visualization');
+                earthVisualization.setMarkerPosition('end-marker', endLocation.lat, endLocation.lng, false);
+                
+                // Try to use the geocoder for end address, but provide a fallback
+                reverseGeocode(endLocation.lat, endLocation.lng)
+                    .then(address => {
+                        endAddress.textContent = address || 'Antipode of ' + locationName;
+                    })
+                    .catch(() => {
+                        endAddress.textContent = 'Antipode of ' + locationName;
+                    });
+                
+                // Enable digging
+                digButton.disabled = false;
+                endLocation.classList.remove('hidden');
+                
+                console.log('Sample location successfully set');
+            } catch (err) {
+                console.error('Error setting location from sample button:', err);
+            }
         });
     });
     
@@ -66,13 +79,23 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (focusStartButton) {
         focusStartButton.addEventListener('click', () => {
-            earthVisualization.focusOnMarker('start-marker');
+            console.log('Focus start button clicked');
+            if (earthVisualization && typeof earthVisualization.focusOnMarker === 'function') {
+                earthVisualization.focusOnMarker('start-marker');
+            } else {
+                console.error('Earth visualization or focusOnMarker method not available');
+            }
         });
     }
     
     if (focusEndButton) {
         focusEndButton.addEventListener('click', () => {
-            earthVisualization.focusOnMarker('end-marker');
+            console.log('Focus end button clicked');
+            if (earthVisualization && typeof earthVisualization.focusOnMarker === 'function') {
+                earthVisualization.focusOnMarker('end-marker');
+            } else {
+                console.error('Earth visualization or focusOnMarker method not available');
+            }
         });
     }
     
@@ -298,20 +321,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // Start the digging journey
     digButton.addEventListener('click', () => {
         if (!startLocation || !endLocation) {
-            alert('Please set your location first');
+            alert('Please select a starting location first');
             return;
         }
         
-        // Update UI
+        // Show journey status
         journeyStatus.classList.remove('hidden');
-        digButton.disabled = true;
         resetButton.classList.remove('hidden');
         
         // Start the animation
         earthVisualization.startJourneyAnimation(
-            startLocation.lat,
-            startLocation.lng,
-            endLocation.lat,
+            startLocation.lat, 
+            startLocation.lng, 
+            endLocation.lat, 
             endLocation.lng
         );
     });
@@ -339,40 +361,52 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Listen for globe click events
     earthContainer.addEventListener('location-selected', (event) => {
-        console.log('Received location-selected event:', event.detail);
+        console.log('Received location-selected event from globe click:', event.detail);
         
-        // Get the coordinates from the event
-        startLocation = event.detail.start;
-        endLocation = event.detail.end;
-        
-        // Update UI with coordinates
-        startCoords.textContent = `${startLocation.lat.toFixed(6)}, ${startLocation.lng.toFixed(6)}`;
-        endCoords.textContent = `${endLocation.lat.toFixed(6)}, ${endLocation.lng.toFixed(6)}`;
-        
-        // Set location name and address
-        startAddress.textContent = `Selected Location (${startLocation.lat.toFixed(2)}, ${startLocation.lng.toFixed(2)})`;
-        endAddress.textContent = `Antipode (${endLocation.lat.toFixed(2)}, ${endLocation.lng.toFixed(2)})`;
-        
-        // Try to reverse geocode the locations in the background
-        reverseGeocode(startLocation.lat, startLocation.lng)
-            .then(address => {
-                if (address) startAddress.textContent = address;
-            })
-            .catch((err) => {
-                console.error('Error reverse geocoding start location:', err);
-            });
+        try {
+            // Get the coordinates from the event
+            startLocation = event.detail.start;
+            endLocation = event.detail.end;
             
-        reverseGeocode(endLocation.lat, endLocation.lng)
-            .then(address => {
-                if (address) endAddress.textContent = address;
-            })
-            .catch((err) => {
-                console.error('Error reverse geocoding end location:', err);
-            });
-        
-        // Update UI
-        digButton.disabled = false;
-        endLocation.classList.remove('hidden');
+            // Format coordinates for display
+            const startLat = parseFloat(startLocation.lat).toFixed(6);
+            const startLng = parseFloat(startLocation.lng).toFixed(6);
+            const endLat = parseFloat(endLocation.lat).toFixed(6);
+            const endLng = parseFloat(endLocation.lng).toFixed(6);
+            
+            // Update UI with coordinates
+            startCoords.textContent = `${startLat}, ${startLng}`;
+            endCoords.textContent = `${endLat}, ${endLng}`;
+            
+            // Set location name and address
+            startAddress.textContent = `Selected Location (${parseFloat(startLat).toFixed(2)}, ${parseFloat(startLng).toFixed(2)})`;
+            endAddress.textContent = `Antipode (${parseFloat(endLat).toFixed(2)}, ${parseFloat(endLng).toFixed(2)})`;
+            
+            // Try to reverse geocode the locations in the background
+            reverseGeocode(startLocation.lat, startLocation.lng)
+                .then(address => {
+                    if (address) startAddress.textContent = address;
+                })
+                .catch((err) => {
+                    console.error('Error reverse geocoding start location:', err);
+                });
+                
+            reverseGeocode(endLocation.lat, endLocation.lng)
+                .then(address => {
+                    if (address) endAddress.textContent = address;
+                })
+                .catch((err) => {
+                    console.error('Error reverse geocoding end location:', err);
+                });
+            
+            // Update UI
+            digButton.disabled = false;
+            endLocation.classList.remove('hidden');
+            
+            console.log('Successfully processed location from globe click');
+        } catch (err) {
+            console.error('Error processing location from globe click:', err);
+        }
     });
 
     // Add a confirmation that event listeners are properly attached

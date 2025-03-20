@@ -126,9 +126,44 @@ class EarthVisualizer {
         
         console.log('Earth object created:', this.earth);
         
-        this.earthRadius = radius; // Store radius for calculations
+        // FIXED: Ensure we're using correct radius size across the app
+        this.earthRadius = radius; 
+        
+        // Add star field background to enhance the space ambiance
+        this.addStarField();
         
         return this.earth;
+    }
+    
+    // Add a star field to enhance the space ambiance
+    addStarField() {
+        const starsGeometry = new THREE.BufferGeometry();
+        const starCount = 5000;
+        const positions = new Float32Array(starCount * 3);
+        const sizes = new Float32Array(starCount);
+        
+        for (let i = 0; i < starCount; i++) {
+            // Random positions for stars
+            positions[i * 3] = (Math.random() - 0.5) * 2000;
+            positions[i * 3 + 1] = (Math.random() - 0.5) * 2000;
+            positions[i * 3 + 2] = (Math.random() - 0.5) * 2000;
+            
+            // Random sizes for stars
+            sizes[i] = Math.random() * 2;
+        }
+        
+        starsGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        starsGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+        
+        const starMaterial = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 0.01,
+            transparent: true,
+            sizeAttenuation: true
+        });
+        
+        const starField = new THREE.Points(starsGeometry, starMaterial);
+        this.scene.add(starField);
     }
     
     // Create cloud layer
@@ -324,18 +359,28 @@ class EarthVisualizer {
         this.log(`Setting marker ${markerID} at position ${lat.toFixed(2)}, ${lng.toFixed(2)}`);
         const position = this.latLngTo3d(lat, lng, this.earthRadius * 1.02);
         
-        // Check if marker already exists, remove it if it does
-        if (markerID === 'start-marker' && this.startMarker) {
-            this.scene.remove(this.startMarker);
-        } else if (markerID === 'end-marker' && this.endMarker) {
-            this.scene.remove(this.endMarker);
+        // FIXED: Properly track markers with the markerGroups object
+        if (this.markerGroups[markerID]) {
+            this.scene.remove(this.markerGroups[markerID]);
+            // Dispose geometries and materials to avoid memory leaks
+            this.markerGroups[markerID].traverse((object) => {
+                if (object.geometry) object.geometry.dispose();
+                if (object.material) {
+                    if (Array.isArray(object.material)) {
+                        object.material.forEach(material => material.dispose());
+                    } else {
+                        object.material.dispose();
+                    }
+                }
+            });
         }
         
         // Create a marker group
         const markerGroup = new THREE.Group();
+        markerGroup.name = markerID;
         
         // Pin style marker with pin head and stem
-        const pinHeadGeometry = new THREE.SphereGeometry(3, 16, 16);
+        const pinHeadGeometry = new THREE.SphereGeometry(0.05, 16, 16);
         const pinColor = markerID === 'start-marker' ? 0x00ff00 : 0xff0000;
         const pinMaterial = new THREE.MeshPhongMaterial({
             color: pinColor,
@@ -350,8 +395,8 @@ class EarthVisualizer {
         
         // Pin stem (cone pointing to the surface)
         const direction = position.clone().normalize();
-        const stemLength = 8;
-        const pinStemGeometry = new THREE.CylinderGeometry(0.5, 2, stemLength, 8);
+        const stemLength = 0.08;
+        const pinStemGeometry = new THREE.CylinderGeometry(0.01, 0.03, stemLength, 8);
         const pinStem = new THREE.Mesh(pinStemGeometry, pinMaterial);
         
         // Position the stem to point from the surface to the pinhead
@@ -359,12 +404,12 @@ class EarthVisualizer {
         pinStem.position.copy(stemPosition);
         
         // Orient the stem to point outward from the center of the Earth
-        pinStem.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+        pinStem.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize());
         
         markerGroup.add(pinStem);
         
         // Add a glowing halo effect
-        const haloGeometry = new THREE.RingGeometry(5, 8, 32);
+        const haloGeometry = new THREE.RingGeometry(0.06, 0.09, 32);
         const haloMaterial = new THREE.MeshBasicMaterial({
             color: pinColor,
             transparent: true,
@@ -402,13 +447,17 @@ class EarthVisualizer {
         
         const label = new THREE.Sprite(labelMaterial);
         label.position.copy(position.clone().multiplyScalar(1.1));
-        label.scale.set(20, 10, 1);
+        label.scale.set(0.2, 0.1, 1);
         markerGroup.add(label);
         
         // Add debug info
         console.log(`Marker ${markerID} at: lat=${lat}, lng=${lng}, pos=(${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`);
         
-        // Store reference and add to scene
+        // FIXED: Store in markerGroups and add to scene
+        this.markerGroups[markerID] = markerGroup;
+        this.scene.add(markerGroup);
+        
+        // For backward compatibility - maintain old references
         if (markerID === 'start-marker') {
             this.startMarker = markerGroup;
             
@@ -416,12 +465,10 @@ class EarthVisualizer {
             if (shouldFocus) {
                 this.focusOnLocation(position, 1500);
             }
-        } else {
+        } else if (markerID === 'end-marker') {
             this.endMarker = markerGroup;
             // Don't automatically focus on end marker until animation
         }
-        
-        this.scene.add(markerGroup);
         
         return position;
     }
@@ -998,55 +1045,49 @@ class EarthVisualizer {
     }
     
     // Focus on a specific marker (start or end)
-    focusOnMarker(markerType = 'start') {
-        if (!this.startMarker && !this.endMarker) {
-            this.log('No markers to focus on');
+    focusOnMarker(markerType) {
+        console.log(`Attempting to focus on marker: ${markerType}`);
+        
+        // FIXED: Handle both old marker ID format and new format
+        const markerID = markerType.endsWith('-marker') ? markerType : `${markerType}-marker`;
+        
+        if (!this.markerGroups[markerID]) {
+            console.warn(`Marker ${markerID} not found for focusing`);
             return;
         }
         
-        let markerPosition;
+        const markerGroup = this.markerGroups[markerID];
         
-        if (markerType === 'start' && this.startMarker) {
-            // Find the marker head in the group (first sphere)
-            const pinHead = this.startMarker.children.find(child => 
+        // Find the pin head in the marker group (sphere at index 0)
+        let markerPosition;
+        if (markerGroup.children.length > 0) {
+            const pinHead = markerGroup.children.find(child => 
                 child.geometry && child.geometry.type === 'SphereGeometry');
-            
+                
             if (pinHead) {
-                markerPosition = pinHead.position.clone();
-            } else {
-                // Fallback to using the group position
                 markerPosition = new THREE.Vector3();
-                this.startMarker.getWorldPosition(markerPosition);
+                pinHead.getWorldPosition(markerPosition);
+                console.log(`Found marker position from pin head: ${markerPosition.x.toFixed(2)}, ${markerPosition.y.toFixed(2)}, ${markerPosition.z.toFixed(2)}`);
             }
-        } else if (markerType === 'end' && this.endMarker) {
-            // Find the marker head in the group (first sphere)
-            const pinHead = this.endMarker.children.find(child => 
-                child.geometry && child.geometry.type === 'SphereGeometry');
-            
-            if (pinHead) {
-                markerPosition = pinHead.position.clone();
-            } else {
-                // Fallback to using the group position
-                markerPosition = new THREE.Vector3();
-                this.endMarker.getWorldPosition(markerPosition);
-            }
-        } else {
-            // Fallback to whatever marker exists
-            const marker = this.startMarker || this.endMarker;
-            markerPosition = new THREE.Vector3();
-            marker.getWorldPosition(markerPosition);
         }
         
-        this.log(`Found marker position: ${markerPosition.x.toFixed(2)}, ${markerPosition.y.toFixed(2)}, ${markerPosition.z.toFixed(2)}`);
+        // If we couldn't find the pin head, use the group's position
+        if (!markerPosition) {
+            markerPosition = new THREE.Vector3();
+            markerGroup.getWorldPosition(markerPosition);
+            console.log(`Using marker group position: ${markerPosition.x.toFixed(2)}, ${markerPosition.y.toFixed(2)}, ${markerPosition.z.toFixed(2)}`);
+        }
         
         // Scale the position out slightly to get a good view
         const direction = markerPosition.clone().normalize();
         const cameraDistance = this.earthRadius * 1.8;
-        const scaledPosition = direction.multiplyScalar(cameraDistance);
+        const targetPosition = direction.multiplyScalar(cameraDistance);
+        
+        console.log(`Moving camera to: ${targetPosition.x.toFixed(2)}, ${targetPosition.y.toFixed(2)}, ${targetPosition.z.toFixed(2)}`);
         
         // Animate camera to this position
-        this.animateCameraToPosition(scaledPosition, 1500, () => {
-            this.log(`Focused on ${markerType} marker`);
+        this.animateCameraToPosition(targetPosition, 1000, () => {
+            console.log(`Successfully focused on ${markerID}`);
         });
     }
     
@@ -1070,16 +1111,26 @@ class EarthVisualizer {
             
             console.log('Mouse coords:', this.mouse.x, this.mouse.y);
             
-            // Perform raycasting to detect intersection with the earth
-            this.raycaster.setFromCamera(this.mouse, this.camera);
+            // FIXED: Create a temporary raycaster for this specific click
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(this.mouse, this.camera);
             
-            // Create an array of objects to check for intersection
-            const objectsToCheck = [];
-            if (this.earth) objectsToCheck.push(this.earth);
-            if (this.clouds) objectsToCheck.push(this.clouds);
+            // Cast ray against ALL objects in the scene that are meshes
+            const meshes = [];
+            this.scene.traverse((object) => {
+                if (object instanceof THREE.Mesh && 
+                    object !== this.traveler && 
+                    !this.markerGroups['start-marker']?.children.includes(object) && 
+                    !this.markerGroups['end-marker']?.children.includes(object)) {
+                    meshes.push(object);
+                }
+            });
             
-            // Intersect with either the earth or clouds
-            const intersects = this.raycaster.intersectObjects(objectsToCheck, true);
+            // Log all detected meshes for debugging
+            console.log('Detected meshes for raycasting:', meshes.length);
+            
+            // Intersect with any mesh in the scene
+            const intersects = raycaster.intersectObjects(meshes);
             console.log('Intersections found:', intersects.length);
             
             // If something was clicked
@@ -1113,8 +1164,14 @@ class EarthVisualizer {
                 });
                 console.log('Dispatching location-selected event');
                 this.container.dispatchEvent(locationEvent);
+                
+                // FIXED: Add visual feedback for successful click
+                this.showClickFeedback(intersects[0].point);
+                
+                return true;
             } else {
                 console.log('No intersection with Earth objects');
+                return false;
             }
         });
         
@@ -1126,8 +1183,21 @@ class EarthVisualizer {
             this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
             this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
             
-            this.raycaster.setFromCamera(this.mouse, this.camera);
-            const intersects = this.raycaster.intersectObject(this.earth);
+            // FIXED: Use the same broad raycasting approach for consistency
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(this.mouse, this.camera);
+            
+            const meshes = [];
+            this.scene.traverse((object) => {
+                if (object instanceof THREE.Mesh && 
+                    object !== this.traveler && 
+                    !this.markerGroups['start-marker']?.children.includes(object) && 
+                    !this.markerGroups['end-marker']?.children.includes(object)) {
+                    meshes.push(object);
+                }
+            });
+            
+            const intersects = raycaster.intersectObjects(meshes);
             
             if (intersects.length > 0) {
                 this.renderer.domElement.style.cursor = 'pointer';
@@ -1136,11 +1206,75 @@ class EarthVisualizer {
             }
         });
     }
+    
+    // ADDED: Visual feedback for successful click
+    showClickFeedback(position) {
+        // Create a small sphere at the clicked position
+        const geometry = new THREE.SphereGeometry(0.05, 16, 16);
+        const material = new THREE.MeshBasicMaterial({ 
+            color: 0xffff00,
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        const feedback = new THREE.Mesh(geometry, material);
+        feedback.position.copy(position);
+        this.scene.add(feedback);
+        
+        // Create expanding ring
+        const ringGeometry = new THREE.RingGeometry(0.05, 0.07, 32);
+        const ringMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffff00,
+            transparent: true,
+            opacity: 0.6,
+            side: THREE.DoubleSide
+        });
+        
+        const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+        ring.position.copy(position);
+        ring.lookAt(0, 0, 0); // Face toward center
+        this.scene.add(ring);
+        
+        // Animate and remove
+        let scale = 1;
+        let opacity = 0.8;
+        
+        const expandRing = () => {
+            scale += 0.08;
+            opacity -= 0.03;
+            
+            ring.scale.set(scale, scale, scale);
+            ringMaterial.opacity = opacity;
+            
+            if (opacity > 0) {
+                requestAnimationFrame(expandRing);
+            } else {
+                this.scene.remove(ring);
+                ring.geometry.dispose();
+                ring.material.dispose();
+            }
+        };
+        
+        expandRing();
+        
+        // Remove feedback after animation
+        setTimeout(() => {
+            this.scene.remove(feedback);
+            feedback.geometry.dispose();
+            feedback.material.dispose();
+        }, 500);
+    }
 }
 
 // Wait for DOM to be fully loaded
 window.addEventListener('DOMContentLoaded', () => {
     console.log('DOM loaded, initializing Earth visualizer');
+    
+    // FIXED: Check for WebGL compatibility first
+    if (!isWebGLAvailable()) {
+        showWebGLError();
+        return;
+    }
     
     // Global error handler for THREE.js issues
     window.handleThreeJsError = function() {
@@ -1199,24 +1333,53 @@ window.addEventListener('DOMContentLoaded', () => {
         const testRenderer = new THREE.WebGLRenderer();
         testRenderer.dispose();
         
-        // Create global instance for other scripts to use
-        // Note: This is a fallback. The app.js should create its own instance.
-        const container = document.querySelector('.earth-visualization');
-        if (container && !window.earthVisualizer) {
-            window.earthVisualizer = new EarthVisualizer(container);
-            console.log('Created global Earth visualizer instance');
-        }
+        // FIXED: Delay creation of global instance to ensure THREE.js is fully loaded
+        setTimeout(() => {
+            // Create global instance for other scripts to use
+            // Note: This is a fallback. The app.js should create its own instance.
+            const container = document.querySelector('.earth-visualization');
+            if (container && !window.earthVisualizer) {
+                window.earthVisualizer = new EarthVisualizer(container);
+                console.log('Created global Earth visualizer instance');
+            }
+        }, 200);
     } catch (error) {
         console.error('WebGL initialization error:', error);
-        const container = document.querySelector('.earth-visualization');
-        if (container) {
-            container.innerHTML = `
-                <div style="color: white; text-align: center; padding: 20px;">
-                    <p>Error initializing WebGL: ${error.message || 'Unknown error'}</p>
-                    <p>Please try using a different browser with WebGL support.</p>
-                    <p>Check that hardware acceleration is enabled in your browser settings.</p>
-                </div>
-            `;
-        }
+        showWebGLError(error.message);
     }
 });
+
+// FIXED: Helper functions for WebGL detection and error handling
+function isWebGLAvailable() {
+    try {
+        const canvas = document.createElement('canvas');
+        return !!(window.WebGLRenderingContext && 
+            (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')));
+    } catch (e) {
+        return false;
+    }
+}
+
+function showWebGLError(message = '') {
+    const container = document.querySelector('.earth-visualization');
+    if (container) {
+        container.innerHTML = `
+            <div style="color: white; text-align: center; padding: 20px;">
+                <p>Error initializing WebGL: ${message || 'Your browser may not support WebGL'}</p>
+                <p>Please try using a different browser with WebGL support.</p>
+                <p>Check that hardware acceleration is enabled in your browser settings.</p>
+                <button id="reload-threejs" style="padding: 10px 20px; margin-top: 15px; background-color: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                    Try Again
+                </button>
+            </div>
+        `;
+        
+        // Add reload button functionality
+        const reloadBtn = document.getElementById('reload-threejs');
+        if (reloadBtn) {
+            reloadBtn.addEventListener('click', function() {
+                location.reload();
+            });
+        }
+    }
+}
