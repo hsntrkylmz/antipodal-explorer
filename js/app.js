@@ -7,10 +7,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const locationCoordinatesDiv = document.getElementById('location-coordinates');
     const journeyAnimationDiv = document.getElementById('journey-animation');
     const endLocationDiv = document.getElementById('end-location');
+    const locationSearchInput = document.getElementById('location-search');
+    const searchResultsDiv = document.getElementById('search-results');
     
     // Location data
     let userLocation = null;
     let antipodalLocation = null;
+    let searchTimeout = null;
     
     // Initialize app
     init();
@@ -21,11 +24,196 @@ document.addEventListener('DOMContentLoaded', () => {
         startJourneyBtn.addEventListener('click', startJourney);
         resetBtn.addEventListener('click', resetApp);
         
+        // Location search listeners
+        locationSearchInput.addEventListener('input', handleSearchInput);
+        locationSearchInput.addEventListener('focus', () => {
+            if (searchResultsDiv.children.length > 0) {
+                searchResultsDiv.classList.remove('hidden');
+            }
+        });
+        
+        // Close search results when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!locationSearchInput.contains(e.target) && !searchResultsDiv.contains(e.target)) {
+                searchResultsDiv.classList.add('hidden');
+            }
+        });
+        
         // Check if geolocation is available
         if (!navigator.geolocation) {
             updateLocationStatus('Geolocation is not supported by your browser');
             locationPermissionBtn.disabled = true;
         }
+    }
+    
+    // Handle search input with debounce
+    function handleSearchInput(e) {
+        const query = e.target.value.trim();
+        
+        // Clear previous timeout
+        if (searchTimeout) {
+            clearTimeout(searchTimeout);
+        }
+        
+        // Clear results if query is empty
+        if (query.length === 0) {
+            searchResultsDiv.innerHTML = '';
+            searchResultsDiv.classList.add('hidden');
+            return;
+        }
+        
+        // Set new timeout for debounce (300ms)
+        searchTimeout = setTimeout(() => {
+            // Check if it's coordinates format
+            if (isCoordinatesFormat(query)) {
+                try {
+                    const coords = parseCoordinates(query);
+                    if (coords) {
+                        showCoordinateResult(coords);
+                    }
+                } catch (err) {
+                    console.error('Error parsing coordinates:', err);
+                }
+            } else {
+                // Search for locations
+                searchLocations(query);
+            }
+        }, 300);
+    }
+    
+    // Check if input matches coordinates format
+    function isCoordinatesFormat(input) {
+        // Simple regex to match coordinates formats like:
+        // 40.7128, -74.0060 or 40.7128,-74.0060 or 40.7128 -74.0060
+        const coordRegex = /^-?\d+\.?\d*\s*,?\s*-?\d+\.?\d*$/;
+        return coordRegex.test(input);
+    }
+    
+    // Parse coordinates from string
+    function parseCoordinates(input) {
+        const parts = input.split(/[,\s]+/).filter(part => part.trim() !== '');
+        
+        if (parts.length !== 2) {
+            return null;
+        }
+        
+        const lat = parseFloat(parts[0]);
+        const lng = parseFloat(parts[1]);
+        
+        // Validate coordinates
+        if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+            return null;
+        }
+        
+        return { lat, lng };
+    }
+    
+    // Show coordinate result in dropdown
+    function showCoordinateResult(coords) {
+        searchResultsDiv.innerHTML = '';
+        
+        const resultItem = document.createElement('div');
+        resultItem.className = 'search-result-item';
+        resultItem.textContent = `Coordinates: ${coords.lat.toFixed(6)}, ${coords.lng.toFixed(6)}`;
+        
+        resultItem.addEventListener('click', () => {
+            selectLocation(coords);
+            searchResultsDiv.classList.add('hidden');
+            locationSearchInput.value = `${coords.lat.toFixed(6)}, ${coords.lng.toFixed(6)}`;
+        });
+        
+        searchResultsDiv.appendChild(resultItem);
+        searchResultsDiv.classList.remove('hidden');
+    }
+    
+    // Search locations using OpenStreetMap Nominatim API
+    async function searchLocations(query) {
+        try {
+            const response = await fetch(
+                `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`
+            );
+            
+            const results = await response.json();
+            displaySearchResults(results);
+        } catch (error) {
+            console.error('Error searching locations:', error);
+        }
+    }
+    
+    // Display search results
+    function displaySearchResults(results) {
+        searchResultsDiv.innerHTML = '';
+        
+        if (results.length === 0) {
+            const noResults = document.createElement('div');
+            noResults.className = 'search-result-item';
+            noResults.textContent = 'No results found';
+            searchResultsDiv.appendChild(noResults);
+        } else {
+            results.forEach(result => {
+                const resultItem = document.createElement('div');
+                resultItem.className = 'search-result-item';
+                
+                const coords = {
+                    lat: parseFloat(result.lat),
+                    lng: parseFloat(result.lon)
+                };
+                
+                // Format display name
+                resultItem.textContent = result.display_name;
+                
+                // Add click handler
+                resultItem.addEventListener('click', () => {
+                    selectLocation(coords);
+                    searchResultsDiv.classList.add('hidden');
+                    locationSearchInput.value = result.display_name;
+                });
+                
+                searchResultsDiv.appendChild(resultItem);
+            });
+        }
+        
+        searchResultsDiv.classList.remove('hidden');
+    }
+    
+    // Select a location from search results
+    function selectLocation(coords) {
+        userLocation = {
+            lat: coords.lat,
+            lng: coords.lng
+        };
+        
+        // Calculate antipodal point
+        antipodalLocation = calculateAntipode(userLocation.lat, userLocation.lng);
+        
+        // Display locations
+        displayLocationInfo(userLocation, antipodalLocation);
+        
+        // Update UI
+        currentLocationDiv.classList.add('hidden');
+        locationCoordinatesDiv.classList.remove('hidden');
+        startJourneyBtn.classList.remove('hidden');
+        
+        // Set markers on the globe
+        earthVisualizer.setMarkerPosition(
+            'start-marker', 
+            userLocation.lat, 
+            userLocation.lng
+        );
+        
+        earthVisualizer.setMarkerPosition(
+            'end-marker',
+            antipodalLocation.lat,
+            antipodalLocation.lng
+        );
+        
+        // Draw path
+        earthVisualizer.drawDigPath(
+            userLocation.lat, 
+            userLocation.lng,
+            antipodalLocation.lat,
+            antipodalLocation.lng
+        );
     }
     
     // Request location permission
@@ -54,13 +242,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // Set markers on the globe
                 earthVisualizer.setMarkerPosition(
-                    document.getElementById('start-marker'), 
+                    'start-marker', 
                     userLocation.lat, 
                     userLocation.lng
                 );
                 
                 earthVisualizer.setMarkerPosition(
-                    document.getElementById('end-marker'),
+                    'end-marker',
                     antipodalLocation.lat,
                     antipodalLocation.lng
                 );
@@ -206,6 +394,11 @@ document.addEventListener('DOMContentLoaded', () => {
         endLocationDiv.classList.add('hidden');
         startJourneyBtn.classList.add('hidden');
         resetBtn.classList.add('hidden');
+        
+        // Clear search
+        locationSearchInput.value = '';
+        searchResultsDiv.innerHTML = '';
+        searchResultsDiv.classList.add('hidden');
         
         // Reset location permission button
         locationPermissionBtn.disabled = false;
