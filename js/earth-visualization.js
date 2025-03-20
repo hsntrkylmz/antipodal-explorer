@@ -1,139 +1,105 @@
 class EarthVisualizer {
-    constructor(container = null) {
+    constructor(container) {
         console.log('EarthVisualizer constructor called');
         
-        // DOM elements
-        if (container) {
-            this.container = container;
+        // If container is a string, get the element by selector
+        if (typeof container === 'string') {
+            this.container = document.querySelector(container);
         } else {
-            this.container = document.querySelector('.earth-visualization');
+            this.container = container;
         }
-        console.log('Container found:', this.container);
+        
+        if (!this.container) {
+            console.error('Container not found');
+            return;
+        }
         
         // UI elements - will be connected in app.js
         this.progressBar = null;
         this.statusText = null;
         
-        // Three.js variables
+        // Initialize properties
         this.scene = null;
         this.camera = null;
         this.renderer = null;
+        this.controls = null;
         this.earth = null;
-        this.startMarker = null;
-        this.endMarker = null;
-        this.digLine = null;
+        this.clouds = null;
+        this.markerGroups = {};
+        this.raycaster = new THREE.Raycaster();
+        this.mouse = new THREE.Vector2();
+        this.isAnimating = false;
+        this.traveler = null;
+        this.trails = [];
         
         // Animation variables
         this.earthRadius = 100;
-        this.isAnimating = false;
         this.animationFrameId = null;
         
         // Debug flag
         this.debug = true;
         
-        // Initialize the 3D scene
-        this.init();
+        // Load textures and initialize scene
+        this.loadTextures()
+            .then(() => {
+                this.initScene();
+                this.createEarth();
+                this.createClouds();
+                this.createLighting();
+                this.animate();
+                
+                // Setup event listeners after everything is initialized
+                this.setupEventListeners();
+            })
+            .catch(error => {
+                console.error('Error loading textures:', error);
+                this.container.innerHTML = `
+                    <div style="color: white; text-align: center; padding: 20px;">
+                        <p>Error initializing 3D Earth: ${error.message}</p>
+                        <p>Please try using a different browser with WebGL support.</p>
+                    </div>
+                `;
+            });
+    }
+    
+    // Initialize the scene, camera, renderer and controls
+    initScene() {
+        // Create scene
+        this.scene = new THREE.Scene();
+        
+        // Create camera
+        this.camera = new THREE.PerspectiveCamera(45, this.container.clientWidth / this.container.clientHeight, 0.1, 1000);
+        this.camera.position.z = 3;
+        
+        // Create renderer
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.container.appendChild(this.renderer.domElement);
+        
+        // Create controls
+        this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.enableDamping = true;
+        this.controls.dampingFactor = 0.1;
+        this.controls.rotateSpeed = 0.5;
+        this.controls.autoRotate = true;
+        this.controls.autoRotateSpeed = 0.5;
+        this.controls.enablePan = false;
+        this.controls.minDistance = 1.5;
+        this.controls.maxDistance = 5;
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+        });
     }
     
     log(message) {
         if (this.debug) {
             console.log(`[EarthVisualizer] ${message}`);
         }
-    }
-    
-    init() {
-        this.log('Initializing 3D Earth with simple approach...');
-        
-        try {
-            // Create scene
-            this.scene = new THREE.Scene();
-            this.scene.background = new THREE.Color(0x000000);
-            
-            // Create camera
-            this.camera = new THREE.PerspectiveCamera(
-                45, 
-                this.container.offsetWidth / this.container.offsetHeight, 
-                0.1, 
-                2000
-            );
-            this.camera.position.z = 300;
-            
-            // Create renderer
-            this.renderer = new THREE.WebGLRenderer({ 
-                antialias: true,
-                alpha: true
-            });
-            this.renderer.setSize(this.container.offsetWidth, this.container.offsetHeight);
-            this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            
-            // Set correct color encoding
-            if (this.renderer.outputEncoding !== undefined) {
-                this.renderer.outputEncoding = THREE.sRGBEncoding;
-            }
-            
-            // Clear container before appending
-            while (this.container.firstChild) {
-                this.container.removeChild(this.container.firstChild);
-            }
-            
-            this.container.appendChild(this.renderer.domElement);
-            
-            // Initialize controls
-            this.initControls();
-            
-            // Improved lighting for better realism
-            // Ambient light (overall illumination)
-            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
-            this.scene.add(ambientLight);
-            
-            // Main directional light (sunlight)
-            const sunLight = new THREE.DirectionalLight(0xffffff, 1.0);
-            sunLight.position.set(1.5, 0.5, 1);
-            this.scene.add(sunLight);
-            
-            // Add a subtle blue light from the opposite side (earth-shine)
-            const backLight = new THREE.DirectionalLight(0x4466aa, 0.4);
-            backLight.position.set(-1, -0.2, -1);
-            this.scene.add(backLight);
-            
-            // Create a realistic Earth
-            this.createSimpleEarth();
-            
-            // Add window resize handler
-            window.addEventListener('resize', () => {
-                this.camera.aspect = this.container.offsetWidth / this.container.offsetHeight;
-                this.camera.updateProjectionMatrix();
-                this.renderer.setSize(this.container.offsetWidth, this.container.offsetHeight);
-            });
-            
-            // Start animation loop
-            this.animate();
-            
-            this.log('3D Earth initialized successfully with realistic approach');
-        } catch (error) {
-            console.error('Error initializing Earth:', error);
-            this.container.innerHTML = `
-                <div style="color: white; text-align: center; padding: 20px;">
-                    <p>Error initializing 3D Earth: ${error.message}</p>
-                    <p>Please try using a different browser with WebGL support.</p>
-                </div>
-            `;
-        }
-    }
-    
-    // Initialize controls
-    initControls() {
-        // Setup OrbitControls
-        this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
-        this.controls.enableDamping = true; // An animation loop is required when either damping or auto-rotation is enabled
-        this.controls.dampingFactor = 0.05;
-        this.controls.screenSpacePanning = false;
-        this.controls.minDistance = 120;
-        this.controls.maxDistance = 500;
-        this.controls.maxPolarAngle = Math.PI;
-        // this.controls.enabled = false; // Initially disabled
-        this.controls.autoRotate = true; // Auto-rotation for an interactive feel
-        this.controls.autoRotateSpeed = 0.5; // Slower rotation
     }
     
     // Create a realistic Earth with actual texture maps
@@ -983,6 +949,71 @@ class EarthVisualizer {
         // Animate camera to this position
         this.animateCameraToPosition(scaledPosition, 1500, () => {
             this.log(`Focused on ${markerType} marker`);
+        });
+    }
+    
+    // Add a new method for setting up event listeners
+    setupEventListeners() {
+        // Add click event listener to the renderer's canvas
+        this.renderer.domElement.addEventListener('click', (event) => {
+            if (this.isAnimating) return; // Ignore clicks during animation
+            
+            // Get canvas-relative mouse coordinates
+            const rect = this.renderer.domElement.getBoundingClientRect();
+            this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            
+            // Perform raycasting to detect intersection with the earth
+            this.raycaster.setFromCamera(this.mouse, this.camera);
+            const intersects = this.raycaster.intersectObject(this.earth);
+            
+            // If the earth was clicked
+            if (intersects.length > 0) {
+                // Get the intersection point
+                const point = intersects[0].point.clone().normalize();
+                
+                // Convert to latitude and longitude
+                const lat = Math.asin(point.y) * (180 / Math.PI);
+                const lng = Math.atan2(point.z, point.x) * (180 / Math.PI);
+                
+                // Set the start marker at the clicked location
+                this.setMarkerPosition('start-marker', lat, lng, true);
+                
+                // Calculate antipodal point
+                const antiLat = -lat;
+                let antiLng = lng + 180;
+                if (antiLng > 180) antiLng -= 360;
+                
+                // Set the end marker at the antipodal point
+                this.setMarkerPosition('end-marker', antiLat, antiLng, false);
+                
+                // Dispatch a custom event with the location data for app.js to use
+                const locationEvent = new CustomEvent('location-selected', {
+                    detail: {
+                        start: { lat, lng },
+                        end: { lat: antiLat, lng: antiLng }
+                    }
+                });
+                this.container.dispatchEvent(locationEvent);
+            }
+        });
+        
+        // Add hover effect to show cursor change when hovering over the earth
+        this.renderer.domElement.addEventListener('mousemove', (event) => {
+            if (this.isAnimating) return;
+            
+            const rect = this.renderer.domElement.getBoundingClientRect();
+            this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            
+            this.raycaster.setFromCamera(this.mouse, this.camera);
+            const intersects = this.raycaster.intersectObject(this.earth);
+            
+            if (intersects.length > 0) {
+                this.renderer.domElement.style.cursor = 'pointer';
+            } else {
+                this.renderer.domElement.style.cursor = 'default';
+            }
         });
     }
 }

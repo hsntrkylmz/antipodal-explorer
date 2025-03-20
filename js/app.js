@@ -336,4 +336,36 @@ document.addEventListener('DOMContentLoaded', () => {
         // Clear input
         locationInput.value = '';
     });
+
+    // Listen for globe click events
+    earthContainer.addEventListener('location-selected', (event) => {
+        // Get the coordinates from the event
+        startLocation = event.detail.start;
+        endLocation = event.detail.end;
+        
+        // Update UI with coordinates
+        startCoords.textContent = `${startLocation.lat.toFixed(6)}, ${startLocation.lng.toFixed(6)}`;
+        endCoords.textContent = `${endLocation.lat.toFixed(6)}, ${endLocation.lng.toFixed(6)}`;
+        
+        // Set location name and address
+        startAddress.textContent = `Selected Location (${startLocation.lat.toFixed(2)}, ${startLocation.lng.toFixed(2)})`;
+        endAddress.textContent = `Antipode (${endLocation.lat.toFixed(2)}, ${endLocation.lng.toFixed(2)})`;
+        
+        // Try to reverse geocode the locations in the background
+        reverseGeocode(startLocation.lat, startLocation.lng)
+            .then(address => {
+                if (address) startAddress.textContent = address;
+            })
+            .catch(() => {});
+            
+        reverseGeocode(endLocation.lat, endLocation.lng)
+            .then(address => {
+                if (address) endAddress.textContent = address;
+            })
+            .catch(() => {});
+        
+        // Update UI
+        digButton.disabled = false;
+        endLocation.classList.remove('hidden');
+    });
 });
