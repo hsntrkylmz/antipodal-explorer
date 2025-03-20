@@ -14,8 +14,8 @@
     <script>
         // Check if THREE.js is loaded correctly
         window.addEventListener('error', function(e) {
-            if (e.target.src && e.target.src.includes('three.min.js')) {
-                console.error('Failed to load THREE.js from primary source, trying fallback...');
+            if (e.target.src && e.target.src.includes('three')) {
+                console.error('Failed to load THREE.js from primary source, trying fallback...', e.target.src);
                 loadFallbackScripts();
             }
         }, true);
@@ -30,35 +30,93 @@
             // Remove failed scripts
             document.querySelectorAll('script[data-threejs]').forEach(script => script.remove());
             
-            // Add fallback scripts
-            const threeScript = document.createElement('script');
-            threeScript.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js';
-            threeScript.setAttribute('data-threejs', 'core-fallback');
-            document.head.appendChild(threeScript);
+            // Try multiple fallback sources in sequence
+            const fallbackSources = [
+                {
+                    core: 'https://unpkg.com/three@0.139.0/build/three.min.js',
+                    orbit: 'https://unpkg.com/three@0.139.0/examples/js/controls/OrbitControls.js'
+                },
+                {
+                    core: 'https://cdn.skypack.dev/three@0.139.0',
+                    orbit: 'https://cdn.skypack.dev/three@0.139.0/examples/js/controls/OrbitControls.js'
+                },
+                {
+                    core: 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r139/three.min.js',
+                    orbit: 'js/vendor/OrbitControls.js' // Local fallback if available
+                }
+            ];
             
-            threeScript.onload = function() {
-                const orbitScript = document.createElement('script');
-                orbitScript.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js';
-                orbitScript.setAttribute('data-threejs', 'orbit-fallback');
-                document.head.appendChild(orbitScript);
-                
-                orbitScript.onload = function() {
+            // Try loading scripts from the first source
+            tryLoadingFrom(fallbackSources, 0);
+            
+            function tryLoadingFrom(sources, index) {
+                if (index >= sources.length) {
+                    // All fallbacks failed
                     if (container) {
-                        container.innerHTML = '';
-                        
-                        // Reinitialize if EarthVisualizer exists
-                        if (typeof EarthVisualizer === 'function') {
-                            setTimeout(() => {
-                                window.earthVisualizer = new EarthVisualizer(container);
-                            }, 500);
-                        }
+                        container.innerHTML = `
+                            <div style="color: white; text-align: center; padding: 20px;">
+                                <p>Failed to load 3D libraries. Please try a different browser or check your internet connection.</p>
+                                <button onclick="window.location.reload()" style="padding: 10px; margin-top: 15px; background-color: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                                    Refresh Page
+                                </button>
+                            </div>
+                        `;
                     }
+                    return;
+                }
+                
+                const source = sources[index];
+                
+                // Add core THREE.js script
+                const threeScript = document.createElement('script');
+                threeScript.src = source.core;
+                threeScript.setAttribute('data-threejs', 'core-fallback');
+                
+                threeScript.onload = function() {
+                    console.log('Successfully loaded THREE.js from fallback source:', source.core);
+                    
+                    // Add OrbitControls script
+                    const orbitScript = document.createElement('script');
+                    orbitScript.src = source.orbit;
+                    orbitScript.setAttribute('data-threejs', 'orbit-fallback');
+                    
+                    orbitScript.onload = function() {
+                        console.log('Successfully loaded OrbitControls from fallback source:', source.orbit);
+                        
+                        if (container) {
+                            container.innerHTML = '';
+                            
+                            // Reinitialize if EarthVisualizer exists
+                            if (typeof EarthVisualizer === 'function') {
+                                setTimeout(() => {
+                                    window.earthVisualizer = new EarthVisualizer(container);
+                                }, 500);
+                            }
+                        }
+                    };
+                    
+                    orbitScript.onerror = function() {
+                        console.error('Failed to load OrbitControls from fallback source:', source.orbit);
+                        // Try next fallback
+                        tryLoadingFrom(sources, index + 1);
+                    };
+                    
+                    document.head.appendChild(orbitScript);
                 };
-            };
+                
+                threeScript.onerror = function() {
+                    console.error('Failed to load THREE.js from fallback source:', source.core);
+                    // Try next fallback
+                    tryLoadingFrom(sources, index + 1);
+                };
+                
+                document.head.appendChild(threeScript);
+            }
         }
     </script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" data-threejs="core"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js" data-threejs="orbit"></script>
+    <!-- Primary THREE.js scripts - use reliable CDNs -->
+    <script src="https://unpkg.com/three@0.139.0/build/three.min.js" data-threejs="core"></script>
+    <script src="https://unpkg.com/three@0.139.0/examples/js/controls/OrbitControls.js" data-threejs="orbit"></script>
 </head>
 <body>
     <div class="container">

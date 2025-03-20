@@ -1,5 +1,27 @@
 class EarthVisualizer {
     constructor(container = '.earth-visualization') {
+        // Ensure THREE is loaded before proceeding
+        if (typeof THREE === 'undefined') {
+            console.error('THREE.js not loaded! Cannot initialize EarthVisualizer.');
+            if (typeof container === 'string') {
+                const containerEl = document.querySelector(container);
+                if (containerEl) {
+                    containerEl.innerHTML = `
+                        <div style="color: white; text-align: center; padding: 20px;">
+                            <p>Error: THREE.js library is not loaded.</p>
+                            <p>Please check your internet connection and try again.</p>
+                            <button onclick="window.location.reload()" 
+                                    style="padding: 10px 20px; margin-top: 15px; background-color: #3498db; color: white; 
+                                    border: none; border-radius: 5px; cursor: pointer;">
+                                Reload Page
+                            </button>
+                        </div>
+                    `;
+                }
+            }
+            return;
+        }
+        
         this.log('Initializing Earth Visualizer');
         
         // Get container element
@@ -11,6 +33,12 @@ class EarthVisualizer {
         
         if (!this.container) {
             console.error('Could not find container element:', container);
+            return;
+        }
+        
+        // Check if WebGL is available
+        if (!this.isWebGLAvailable()) {
+            this.showWebGLError();
             return;
         }
         
@@ -33,47 +61,82 @@ class EarthVisualizer {
         this.digPath = null;
         this.travelerMesh = null;
         
-        // Create the scene
-        this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x000000);
-        
-        // Create the camera
-        this.camera = new THREE.PerspectiveCamera(45, this.container.clientWidth / this.container.clientHeight, 0.01, 1000);
-        this.camera.position.z = 3;
-        
-        // Create the renderer
-        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
-        this.container.appendChild(this.renderer.domElement);
-        
-        // Add ambient light
-        const ambientLight = new THREE.AmbientLight(0x333333);
-        this.scene.add(ambientLight);
-        
-        // Add directional light (sun)
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-        directionalLight.position.set(5, 3, 5);
-        this.scene.add(directionalLight);
-        
-        // Load textures and create Earth
-        this.loadTextures()
-            .then(() => {
-                this.createEarth();
-                this.createClouds();
-                this.setupControls();
-                this.setupInteractions();
-                this.hideLoading();
+        try {
+            // Create the scene
+            this.scene = new THREE.Scene();
+            this.scene.background = new THREE.Color(0x000000);
+            
+            // Create the camera
+            this.camera = new THREE.PerspectiveCamera(45, this.container.clientWidth / this.container.clientHeight, 0.01, 1000);
+            this.camera.position.z = 3;
+            
+            // Create the renderer
+            this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+            this.container.appendChild(this.renderer.domElement);
+            
+            // Add ambient light
+            const ambientLight = new THREE.AmbientLight(0x333333);
+            this.scene.add(ambientLight);
+            
+            // Add directional light (sun)
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(5, 3, 5);
+            this.scene.add(directionalLight);
+            
+            // Load textures and create Earth
+            this.loadTextures()
+                .then(() => {
+                    const earthCreated = this.createEarth();
+                    if (earthCreated) {
+                        this.createClouds();
+                        this.setupControls();
+                        this.setupInteractions();
+                        this.hideLoading();
+                        
+                        // Start animation loop
+                        this.animate();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading textures:', error);
+                    this.showLoadingError();
+                });
                 
-                // Start animation loop
-                this.animate();
-            })
-            .catch(error => {
-                console.error('Error loading textures:', error);
-                this.showLoadingError();
-            });
-        
-        // Handle window resize
-        window.addEventListener('resize', this.onWindowResize.bind(this));
+            // Handle window resize
+            window.addEventListener('resize', this.onWindowResize.bind(this));
+            
+        } catch (error) {
+            console.error('Error initializing EarthVisualizer:', error);
+            this.showLoadingError();
+        }
+    }
+    
+    // Check if WebGL is available
+    isWebGLAvailable() {
+        try {
+            const canvas = document.createElement('canvas');
+            return !!(window.WebGLRenderingContext && 
+                (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')));
+        } catch (error) {
+            return false;
+        }
+    }
+    
+    // Show WebGL error message
+    showWebGLError() {
+        this.container.innerHTML = `
+            <div style="color: white; text-align: center; padding: 20px;">
+                <h3>WebGL Not Available</h3>
+                <p>Your browser or device doesn't support WebGL, which is required for 3D Earth visualization.</p>
+                <p>Please try using a modern browser like Chrome, Firefox, or Edge.</p>
+                <button onclick="window.location.reload()" 
+                        style="padding: 10px 20px; margin-top: 15px; background-color: #3498db; color: white; 
+                        border: none; border-radius: 5px; cursor: pointer;">
+                    Try Again
+                </button>
+            </div>
+        `;
     }
     
     // Display loading indicator
@@ -256,55 +319,84 @@ class EarthVisualizer {
         }
     }
     
-    // Create a realistic Earth with actual texture maps
+    // Create the Earth with detailed textures
     createEarth() {
         this.log('Creating Earth mesh');
         
-        // Create a sphere geometry for the Earth
-        const geometry = new THREE.SphereGeometry(this.earthRadius, 64, 64);
-        
-        // Create material with texture and bump mapping
-        const material = new THREE.MeshPhongMaterial({
-            map: this.textures.earthMap,
-            bumpMap: this.textures.earthBumpMap,
-            bumpScale: 0.05,
-            specularMap: this.textures.earthSpecMap,
-            specular: new THREE.Color(0x333333),
-            shininess: 15,
-        });
-        
-        // Create the Earth mesh
-        this.earth = new THREE.Mesh(geometry, material);
-        this.earthMesh = this.earth; // For consistency in references
-        
-        // Add to scene
-        this.scene.add(this.earth);
-        
-        this.log('Earth created successfully');
+        try {
+            // Create a sphere geometry for the Earth
+            const geometry = new THREE.SphereGeometry(this.earthRadius, 64, 64);
+            
+            // Check if texture is loaded
+            if (!this.textures || !this.textures.earthMap) {
+                throw new Error("Earth textures are not loaded properly");
+            }
+            
+            // Create material with texture and bump mapping
+            const material = new THREE.MeshPhongMaterial({
+                map: this.textures.earthMap,
+                bumpMap: this.textures.earthBumpMap,
+                bumpScale: 0.05,
+                specularMap: this.textures.earthSpecMap,
+                specular: new THREE.Color(0x333333),
+                shininess: 15,
+            });
+            
+            // Create the Earth mesh
+            this.earth = new THREE.Mesh(geometry, material);
+            this.earthMesh = this.earth; // For consistency in references
+            
+            // Add to scene
+            this.scene.add(this.earth);
+            
+            this.log('Earth created successfully');
+            return true;
+        } catch (error) {
+            console.error('Error creating Earth:', error);
+            this.showLoadingError();
+            return false;
+        }
     }
     
     // Create cloud layer around the Earth
     createClouds() {
         this.log('Creating cloud layer');
         
-        // Create a slightly larger sphere for clouds
-        const geometry = new THREE.SphereGeometry(this.earthRadius * 1.01, 64, 64);
-        
-        // Create semi-transparent cloud material
-        const material = new THREE.MeshPhongMaterial({
-            map: this.textures.cloudsMap,
-            transparent: true,
-            opacity: 0.8,
-            blending: THREE.NormalBlending
-        });
-        
-        // Create the clouds mesh
-        this.clouds = new THREE.Mesh(geometry, material);
-        
-        // Add to scene
-        this.scene.add(this.clouds);
-        
-        this.log('Clouds created successfully');
+        try {
+            // Check if Earth exists
+            if (!this.earth) {
+                throw new Error("Earth mesh must be created before clouds");
+            }
+            
+            // Check if texture is loaded
+            if (!this.textures || !this.textures.cloudsMap) {
+                throw new Error("Cloud textures are not loaded properly");
+            }
+            
+            // Create a slightly larger sphere for clouds
+            const geometry = new THREE.SphereGeometry(this.earthRadius * 1.01, 64, 64);
+            
+            // Create semi-transparent cloud material
+            const material = new THREE.MeshPhongMaterial({
+                map: this.textures.cloudsMap,
+                transparent: true,
+                opacity: 0.8,
+                blending: THREE.NormalBlending
+            });
+            
+            // Create the clouds mesh
+            this.clouds = new THREE.Mesh(geometry, material);
+            
+            // Add to scene
+            this.scene.add(this.clouds);
+            
+            this.log('Clouds created successfully');
+            return true;
+        } catch (error) {
+            console.error('Error creating clouds:', error);
+            // Don't show error for clouds, just log it
+            return false;
+        }
     }
     
     // Create lighting for the scene
@@ -348,21 +440,21 @@ class EarthVisualizer {
                 // Use reliable CDN-hosted texture maps with fallbacks
                 const textureURLs = {
                     earthMap: [
+                        'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg',
                         'https://unpkg.com/three-globe@2.24.4/example/img/earth-blue-marble.jpg',
-                        'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_atmos_2048.jpg',
                         'https://www.solarsystemscope.com/textures/download/2k_earth_daymap.jpg'
                     ],
                     earthBumpMap: [
-                        'https://unpkg.com/three-globe@2.24.4/example/img/earth-topology.png',
-                        'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_normal_2048.jpg'
+                        'https://threejs.org/examples/textures/planets/earth_normal_2048.jpg',
+                        'https://unpkg.com/three-globe@2.24.4/example/img/earth-topology.png'
                     ],
                     earthSpecMap: [
-                        'https://unpkg.com/three-globe@2.24.4/example/img/earth-water.png',
-                        'https://www.solarsystemscope.com/textures/download/2k_earth_specular_map.jpg'
+                        'https://www.solarsystemscope.com/textures/download/2k_earth_specular_map.jpg',
+                        'https://unpkg.com/three-globe@2.24.4/example/img/earth-water.png'
                     ],
                     cloudsMap: [
+                        'https://threejs.org/examples/textures/planets/earth_clouds_2048.jpg',
                         'https://unpkg.com/three-globe@2.24.4/example/img/earth-clouds.png',
-                        'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_clouds_2048.jpg',
                         'https://www.solarsystemscope.com/textures/download/2k_earth_clouds.jpg'
                     ]
                 };
@@ -373,6 +465,9 @@ class EarthVisualizer {
                 // Count of successfully loaded textures
                 let loadedCount = 0;
                 const totalTextures = Object.keys(textureURLs).length;
+                
+                // Track load failures to allow completing the promise
+                let failedCount = 0;
                 
                 // Function to try loading a texture from multiple URLs
                 const tryLoadingTexture = (key, urlIndex = 0) => {
@@ -407,11 +502,17 @@ class EarthVisualizer {
                         this.textures[key] = texture;
                         
                         loadedCount++;
+                        failedCount++;
                         console.log(`Created fallback texture for ${key} (${loadedCount}/${totalTextures})`);
                         
                         if (loadedCount === totalTextures) {
-                            console.log('All textures loaded using fallbacks where needed');
-                            resolve();
+                            if (failedCount === totalTextures) {
+                                // All textures failed to load
+                                reject(new Error("Failed to load any textures from URLs"));
+                            } else {
+                                console.log('All textures loaded using fallbacks where needed');
+                                resolve();
+                            }
                         }
                         return;
                     }
@@ -438,7 +539,7 @@ class EarthVisualizer {
                         },
                         // Error callback
                         (error) => {
-                            console.warn(`Failed to load texture ${key} from ${url}:`, error);
+                            console.warn(`Failed to load texture ${key} from ${url}:`, error.message || error);
                             // Try the next URL
                             tryLoadingTexture(key, urlIndex + 1);
                         }
