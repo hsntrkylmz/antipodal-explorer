@@ -531,3 +531,39 @@ footer a:hover {
 .secondary-btn.light span {
     font-size: 1.2rem;
 }
+
+.sample-locations {
+    margin: 10px 0 20px;
+    padding: 10px;
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.sample-locations h4 {
+    color: var(--accent-color);
+    margin-bottom: 10px;
+    font-size: 0.95rem;
+}
+
+.sample-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.sample-btn {
+    background-color: rgba(41, 128, 185, 0.15);
+    color: var(--text-color);
+    border: 1px solid rgba(41, 128, 185, 0.3);
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.sample-btn:hover {
+    background-color: rgba(41, 128, 185, 0.3);
+    transform: translateY(-2px);
+}
