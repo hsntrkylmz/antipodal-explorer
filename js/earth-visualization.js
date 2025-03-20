@@ -506,15 +506,63 @@ class EarthVisualizer {
                 throw new Error("Earth mesh must be created before clouds");
             }
             
-            // Check if texture is loaded
-            if (!this.textures || !this.textures.cloudsMap) {
-                throw new Error("Cloud textures are not loaded properly");
-            }
-            
             // Create a slightly larger sphere for clouds
             const geometry = new THREE.SphereGeometry(this.earthRadius * 1.01, 64, 64);
             
-            // Create semi-transparent cloud material
+            // Check if cloud texture is loaded
+            if (!this.textures || !this.textures.cloudsMap) {
+                console.warn("Cloud textures not loaded properly, creating simplified clouds");
+                
+                // Create a simple cloud effect with a semi-transparent white material
+                const material = new THREE.MeshPhongMaterial({
+                    color: 0xffffff,
+                    transparent: true,
+                    opacity: 0.4,
+                    blending: THREE.NormalBlending
+                });
+                
+                this.clouds = new THREE.Mesh(geometry, material);
+                this.scene.add(this.clouds);
+                
+                // Add some random cloud patches as separate geometries
+                // This creates a more interesting cloud effect without textures
+                const addCloudPatches = () => {
+                    for (let i = 0; i < 10; i++) {
+                        // Random position on sphere surface
+                        const phi = Math.random() * Math.PI * 2;
+                        const theta = Math.random() * Math.PI;
+                        const radius = this.earthRadius * 1.02;
+                        
+                        const x = radius * Math.sin(theta) * Math.cos(phi);
+                        const y = radius * Math.sin(theta) * Math.sin(phi);
+                        const z = radius * Math.cos(theta);
+                        
+                        // Create a small sphere for the cloud patch
+                        const patchGeometry = new THREE.SphereGeometry(
+                            radius * (0.05 + Math.random() * 0.05), 8, 8
+                        );
+                        const patchMaterial = new THREE.MeshPhongMaterial({
+                            color: 0xffffff,
+                            transparent: true,
+                            opacity: 0.3 + Math.random() * 0.3,
+                            side: THREE.DoubleSide
+                        });
+                        
+                        const patch = new THREE.Mesh(patchGeometry, patchMaterial);
+                        patch.position.set(x, y, z);
+                        
+                        // Add to clouds object
+                        this.clouds.add(patch);
+                    }
+                };
+                
+                addCloudPatches();
+                
+                this.log('Simplified clouds created successfully');
+                return true;
+            }
+            
+            // Create semi-transparent cloud material with the texture
             const material = new THREE.MeshPhongMaterial({
                 map: this.textures.cloudsMap,
                 transparent: true,
@@ -580,24 +628,29 @@ class EarthVisualizer {
                 
                 console.log('Created fallback textures as safety net');
                 
-                // Use local textures as primary source with CDN backups
+                // Use reliable CDN sources first, then local fallbacks 
                 const textureURLs = {
                     earthMap: [
-                        'assets/textures/earth_daymap.jpg',
                         'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg',
+                        'https://www.solarsystemscope.com/textures/download/2k_earth_daymap.jpg',
                         'https://unpkg.com/three-globe@2.24.4/example/img/earth-blue-marble.jpg',
+                        'assets/textures/earth_daymap.jpg'
                     ],
                     earthBumpMap: [
-                        'assets/textures/earth_normal.jpg',
-                        'https://threejs.org/examples/textures/planets/earth_normal_2048.jpg'
+                        'https://threejs.org/examples/textures/planets/earth_normal_2048.jpg',
+                        'https://unpkg.com/three-globe@2.24.4/example/img/earth-topology.png',
+                        'assets/textures/earth_normal.jpg'
                     ],
                     earthSpecMap: [
-                        'assets/textures/earth_specular.jpg',
-                        'https://www.solarsystemscope.com/textures/download/2k_earth_specular_map.jpg'
+                        'https://www.solarsystemscope.com/textures/download/2k_earth_specular_map.jpg',
+                        'https://unpkg.com/three-globe@2.24.4/example/img/earth-water.png',
+                        'assets/textures/earth_specular.jpg'
                     ],
                     cloudsMap: [
-                        'assets/textures/earth_clouds.png',
-                        'https://threejs.org/examples/textures/planets/earth_clouds_2048.jpg'
+                        'https://threejs.org/examples/textures/planets/earth_clouds_2048.jpg',
+                        'https://unpkg.com/three-globe@2.24.4/example/img/earth-clouds.png',
+                        'https://www.solarsystemscope.com/textures/download/2k_earth_clouds.jpg',
+                        'assets/textures/earth_clouds.png'
                     ]
                 };
                 
@@ -668,47 +721,187 @@ class EarthVisualizer {
     // Create fallback textures for when loading fails
     createFallbackTextures() {
         const keys = ['earthMap', 'earthBumpMap', 'earthSpecMap', 'cloudsMap'];
-        const colors = {
-            earthMap: '#1565C0',
-            earthBumpMap: '#555555',
-            earthSpecMap: '#AAAAAA',
-            cloudsMap: '#FFFFFF'
-        };
         
         for (const key of keys) {
             if (!this.textures[key]) {
                 const canvas = document.createElement('canvas');
-                canvas.width = 256;
-                canvas.height = 256;
+                canvas.width = 512;  // Increased for better detail
+                canvas.height = 256; // Standard map projection ratio
                 const ctx = canvas.getContext('2d');
                 
-                // Create a simple gradient for more visual interest
-                const gradient = ctx.createRadialGradient(
-                    canvas.width/2, canvas.height/2, 0,
-                    canvas.width/2, canvas.height/2, canvas.width/2
-                );
-                
-                gradient.addColorStop(0, colors[key]);
-                gradient.addColorStop(1, this.adjustColor(colors[key], -20));
-                
-                ctx.fillStyle = gradient;
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                
-                // Add some texture with noise for bump and spec maps
-                if (key === 'earthBumpMap' || key === 'earthSpecMap') {
-                    this.addNoiseToCanvas(ctx, canvas.width, canvas.height, 20);
-                }
-                
-                // For clouds, add some cloud-like blobs
-                if (key === 'cloudsMap') {
-                    this.addCloudsToCanvas(ctx, canvas.width, canvas.height);
+                if (key === 'earthMap') {
+                    // Create a more Earth-like texture with continents
+                    this.createEarthMapFallback(ctx, canvas.width, canvas.height);
+                } else if (key === 'cloudsMap') {
+                    // Create cloud-like pattern
+                    this.createCloudsFallback(ctx, canvas.width, canvas.height);
+                } else if (key === 'earthBumpMap') {
+                    // Create a bumpmap with some terrain-like features
+                    this.createBumpMapFallback(ctx, canvas.width, canvas.height);
+                } else if (key === 'earthSpecMap') {
+                    // Create a specular map with oceans more reflective than land
+                    this.createSpecMapFallback(ctx, canvas.width, canvas.height);
                 }
                 
                 // Create texture from canvas
                 const texture = new THREE.CanvasTexture(canvas);
+                if (key === 'earthMap') {
+                    texture.encoding = THREE.sRGBEncoding;
+                }
                 this.textures[key] = texture;
             }
         }
+    }
+    
+    // Create a simple Earth-like texture with continents
+    createEarthMapFallback(ctx, width, height) {
+        // Base ocean color
+        ctx.fillStyle = '#0077be';
+        ctx.fillRect(0, 0, width, height);
+        
+        // Function to draw a continent-like shape
+        const drawContinent = (x, y, size, color) => {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            
+            // Draw a random blob shape for the continent
+            const points = 12;
+            const angleStep = (Math.PI * 2) / points;
+            
+            for (let i = 0; i < points; i++) {
+                const angle = i * angleStep;
+                const radius = size * (0.5 + Math.random() * 0.5);
+                const pointX = x + Math.cos(angle) * radius;
+                const pointY = y + Math.sin(angle) * radius;
+                
+                if (i === 0) {
+                    ctx.moveTo(pointX, pointY);
+                } else {
+                    ctx.lineTo(pointX, pointY);
+                }
+            }
+            
+            ctx.closePath();
+            ctx.fill();
+        };
+        
+        // Draw some continents
+        // North America
+        drawContinent(width * 0.2, height * 0.3, width * 0.15, '#4C9B6C');
+        
+        // South America
+        drawContinent(width * 0.3, height * 0.6, width * 0.1, '#4C9B6C');
+        
+        // Europe/Africa
+        drawContinent(width * 0.5, height * 0.4, width * 0.12, '#CDA658');
+        
+        // Asia
+        drawContinent(width * 0.7, height * 0.35, width * 0.15, '#7C9968');
+        
+        // Australia
+        drawContinent(width * 0.8, height * 0.65, width * 0.08, '#B0946D');
+        
+        // Antarctica 
+        drawContinent(width * 0.5, height * 0.85, width * 0.15, '#E8E8E8');
+        
+        // Add some noise for texture
+        this.addNoiseToCanvas(ctx, width, height, 10);
+    }
+    
+    // Create a cloud texture
+    createCloudsFallback(ctx, width, height) {
+        // Clear canvas
+        ctx.clearRect(0, 0, width, height);
+        
+        // Draw cloud clusters
+        ctx.fillStyle = '#FFFFFF';
+        
+        for (let i = 0; i < 20; i++) {
+            const x = Math.random() * width;
+            const y = Math.random() * height;
+            const size = 20 + Math.random() * 40;
+            
+            // Cloud cluster made of several overlapping circles
+            for (let j = 0; j < 5; j++) {
+                const offsetX = (Math.random() - 0.5) * size;
+                const offsetY = (Math.random() - 0.5) * size;
+                const radius = size * (0.3 + Math.random() * 0.4);
+                
+                ctx.beginPath();
+                ctx.arc(x + offsetX, y + offsetY, radius, 0, Math.PI * 2);
+                
+                // Vary opacity for more realistic clouds
+                ctx.globalAlpha = 0.1 + Math.random() * 0.4;
+                ctx.fill();
+            }
+        }
+        
+        // Reset alpha
+        ctx.globalAlpha = 1.0;
+    }
+    
+    // Create a bump map texture
+    createBumpMapFallback(ctx, width, height) {
+        // Base height
+        ctx.fillStyle = '#555555';
+        ctx.fillRect(0, 0, width, height);
+        
+        // Draw some mountain ranges as lighter areas
+        ctx.fillStyle = '#AAAAAA';
+        
+        for (let i = 0; i < 10; i++) {
+            const x = Math.random() * width;
+            const y = Math.random() * height;
+            const size = 20 + Math.random() * 60;
+            
+            // Draw a random mountainous shape
+            ctx.beginPath();
+            
+            const points = 8 + Math.floor(Math.random() * 5);
+            const angleStep = (Math.PI * 2) / points;
+            
+            for (let j = 0; j < points; j++) {
+                const angle = j * angleStep;
+                const radius = size * (0.5 + Math.random() * 0.5);
+                const pointX = x + Math.cos(angle) * radius;
+                const pointY = y + Math.sin(angle) * radius;
+                
+                if (j === 0) {
+                    ctx.moveTo(pointX, pointY);
+                } else {
+                    ctx.lineTo(pointX, pointY);
+                }
+            }
+            
+            ctx.closePath();
+            ctx.fill();
+        }
+        
+        // Add noise for texture
+        this.addNoiseToCanvas(ctx, width, height, 30);
+    }
+    
+    // Create a specular map texture (oceans reflective, land less so)
+    createSpecMapFallback(ctx, width, height) {
+        // Create Earth-like pattern first (reuse the code)
+        this.createEarthMapFallback(ctx, width, height);
+        
+        // Now apply a filter to make water reflective (bright) and land less so (dark)
+        const imageData = ctx.getImageData(0, 0, width, height);
+        const data = imageData.data;
+        
+        for (let i = 0; i < data.length; i += 4) {
+            // If blue channel is dominant, it's water
+            if (data[i+2] > data[i] && data[i+2] > data[i+1]) {
+                // Water is reflective (bright)
+                data[i] = data[i+1] = data[i+2] = 200;
+            } else {
+                // Land is less reflective (dark)
+                data[i] = data[i+1] = data[i+2] = 30;
+            }
+        }
+        
+        ctx.putImageData(imageData, 0, 0);
     }
     
     // Add noise to canvas for more interesting textures
@@ -724,38 +917,6 @@ class EarthVisualizer {
         }
         
         ctx.putImageData(imageData, 0, 0);
-    }
-    
-    // Add cloud-like blobs to canvas
-    addCloudsToCanvas(ctx, width, height) {
-        ctx.globalCompositeOperation = 'destination-out';
-        
-        // Add 30 cloud blobs
-        for (let i = 0; i < 30; i++) {
-            const x = Math.random() * width;
-            const y = Math.random() * height;
-            const radius = 10 + Math.random() * 30;
-            
-            ctx.beginPath();
-            ctx.arc(x, y, radius, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-            ctx.fill();
-        }
-        
-        ctx.globalCompositeOperation = 'source-over';
-    }
-    
-    // Helper to darken/lighten colors
-    adjustColor(hex, amount) {
-        let r = parseInt(hex.substr(1, 2), 16);
-        let g = parseInt(hex.substr(3, 2), 16);
-        let b = parseInt(hex.substr(5, 2), 16);
-        
-        r = Math.max(0, Math.min(255, r + amount));
-        g = Math.max(0, Math.min(255, g + amount));
-        b = Math.max(0, Math.min(255, b + amount));
-        
-        return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
     }
     
     // Convert latitude and longitude to 3D position on the globe

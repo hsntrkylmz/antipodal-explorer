@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Texture Loading Test</title>
+    <style>
+        body {
+            background-color: #222;
+            color: white;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .texture-test {
+            margin-bottom: 30px;
+        }
+        h1 {
+            color: #4CAF50;
+        }
+        h2 {
+            color: #2196F3;
+        }
+        .status {
+            font-weight: bold;
+            margin: 5px 0;
+        }
+        .success {
+            color: #4CAF50;
+        }
+        .failure {
+            color: #F44336;
+        }
+        img {
+            max-width: 300px;
+            height: auto;
+            border: 2px solid #555;
+            display: block;
+            margin: 10px auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Earth Texture Loading Test</h1>
+        <p>This page attempts to load the textures used in the Antipodal Explorer app.</p>
+        
+        <div class="texture-test">
+            <h2>Earth Map Texture</h2>
+            <div class="status" id="earth-status">Testing...</div>
+            <img id="earth-img" alt="Earth Texture">
+        </div>
+        
+        <div class="texture-test">
+            <h2>Earth Normal Map</h2>
+            <div class="status" id="normal-status">Testing...</div>
+            <img id="normal-img" alt="Normal Map Texture">
+        </div>
+        
+        <div class="texture-test">
+            <h2>Earth Specular Map</h2>
+            <div class="status" id="specular-status">Testing...</div>
+            <img id="specular-img" alt="Specular Map Texture">
+        </div>
+        
+        <div class="texture-test">
+            <h2>Clouds Map</h2>
+            <div class="status" id="clouds-status">Testing...</div>
+            <img id="clouds-img" alt="Clouds Texture">
+        </div>
+        
+        <div id="summary" style="margin-top: 30px; padding: 15px; border: 1px solid #555; border-radius: 5px;">
+            Test results will appear here...
+        </div>
+    </div>
+    
+    <script>
+        // List of textures to test
+        const textures = [
+            {
+                name: 'Earth Map',
+                urls: [
+                    'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg',
+                    'https://www.solarsystemscope.com/textures/download/2k_earth_daymap.jpg',
+                    'https://unpkg.com/three-globe@2.24.4/example/img/earth-blue-marble.jpg'
+                ],
+                imgElement: 'earth-img',
+                statusElement: 'earth-status'
+            },
+            {
+                name: 'Earth Normal Map',
+                urls: [
+                    'https://threejs.org/examples/textures/planets/earth_normal_2048.jpg',
+                    'https://unpkg.com/three-globe@2.24.4/example/img/earth-topology.png'
+                ],
+                imgElement: 'normal-img',
+                statusElement: 'normal-status'
+            },
+            {
+                name: 'Earth Specular Map',
+                urls: [
+                    'https://www.solarsystemscope.com/textures/download/2k_earth_specular_map.jpg',
+                    'https://unpkg.com/three-globe@2.24.4/example/img/earth-water.png'
+                ],
+                imgElement: 'specular-img',
+                statusElement: 'specular-status'
+            },
+            {
+                name: 'Clouds Map',
+                urls: [
+                    'https://threejs.org/examples/textures/planets/earth_clouds_2048.jpg',
+                    'https://unpkg.com/three-globe@2.24.4/example/img/earth-clouds.png',
+                    'https://www.solarsystemscope.com/textures/download/2k_earth_clouds.jpg'
+                ],
+                imgElement: 'clouds-img',
+                statusElement: 'clouds-status'
+            }
+        ];
+        
+        // Test loading textures
+        let successCount = 0;
+        let totalTests = textures.length;
+        
+        textures.forEach(texture => {
+            testTextureLoading(texture);
+        });
+        
+        function testTextureLoading(texture) {
+            const statusElement = document.getElementById(texture.statusElement);
+            const imgElement = document.getElementById(texture.imgElement);
+            
+            let urlIndex = 0;
+            let success = false;
+            
+            function tryNextUrl() {
+                if (urlIndex >= texture.urls.length) {
+                    // All URLs failed
+                    statusElement.textContent = 'Failed: Could not load any URL';
+                    statusElement.className = 'status failure';
+                    updateSummary();
+                    return;
+                }
+                
+                const url = texture.urls[urlIndex];
+                statusElement.textContent = `Testing ${url}...`;
+                
+                // Try to load the image
+                const testImg = new Image();
+                
+                testImg.onload = function() {
+                    success = true;
+                    statusElement.textContent = `Success: Loaded from ${url}`;
+                    statusElement.className = 'status success';
+                    imgElement.src = url;
+                    successCount++;
+                    updateSummary();
+                };
+                
+                testImg.onerror = function() {
+                    urlIndex++;
+                    tryNextUrl();
+                };
+                
+                testImg.src = url;
+            }
+            
+            tryNextUrl();
+        }
+        
+        function updateSummary() {
+            const summaryElement = document.getElementById('summary');
+            
+            if (successCount === totalTests) {
+                summaryElement.innerHTML = `
+                    <h2 style="color: #4CAF50">All Textures Loaded Successfully</h2>
+                    <p>Your browser was able to load all required textures. The Earth visualization should work correctly.</p>
+                `;
+                summaryElement.style.backgroundColor = 'rgba(76, 175, 80, 0.1)';
+            } else if (successCount > 0) {
+                summaryElement.innerHTML = `
+                    <h2 style="color: #FFC107">Partial Success</h2>
+                    <p>Your browser loaded ${successCount} out of ${totalTests} textures. The Earth visualization may work with limited quality.</p>
+                `;
+                summaryElement.style.backgroundColor = 'rgba(255, 193, 7, 0.1)';
+            } else if (successCount === 0 && totalTests > 0) {
+                summaryElement.innerHTML = `
+                    <h2 style="color: #F44336">All Texture Loading Failed</h2>
+                    <p>Your browser was unable to load any of the required textures. This could be due to:</p>
+                    <ul style="text-align: left">
+                        <li>Network connectivity issues</li>
+                        <li>CORS (Cross-Origin Resource Sharing) restrictions</li>
+                        <li>Server availability issues</li>
+                    </ul>
+                    <p>The Earth visualization will attempt to use fallback textures instead.</p>
+                `;
+                summaryElement.style.backgroundColor = 'rgba(244, 67, 54, 0.1)';
+            }
+        }
+    </script>
+</body>
+</html> 
