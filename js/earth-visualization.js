@@ -1,7 +1,12 @@
 class EarthVisualizer {
     constructor() {
+        console.log('EarthVisualizer constructor called');
+        console.log('DOM Ready state:', document.readyState);
+        
         // DOM elements
         this.container = document.querySelector('.earth-visualization');
+        console.log('Container found:', this.container);
+        
         this.progressBar = document.getElementById('journey-progress-bar');
         this.statusText = document.getElementById('journey-status-text');
         
@@ -114,6 +119,17 @@ class EarthVisualizer {
     createEarth() {
         this.log('Creating Earth...');
         
+        try {
+            // Try to create Earth with textures first
+            this.createTexturedEarth();
+        } catch (error) {
+            console.error('Failed to create textured Earth, using solid color fallback:', error);
+            this.createBasicEarth();
+        }
+    }
+    
+    // Try to create Earth with textures
+    createTexturedEarth() {
         // Load Earth texture
         const textureLoader = new THREE.TextureLoader();
         
@@ -129,49 +145,98 @@ class EarthVisualizer {
         const earthMap = textureLoader.load(earthMapUrl, 
             () => this.log('Earth map texture loaded successfully'),
             undefined,
-            error => console.error('Error loading Earth map texture:', error)
+            error => {
+                console.error('Error loading Earth map texture:', error);
+                throw error;
+            }
         );
         
         const earthBump = textureLoader.load(earthBumpUrl,
             () => this.log('Earth bump texture loaded successfully'),
             undefined,
-            error => console.error('Error loading Earth bump texture:', error)
+            error => {
+                console.error('Error loading Earth bump texture:', error);
+                throw error;
+            }
         );
         
         const earthSpec = textureLoader.load(earthSpecUrl,
             () => this.log('Earth specular texture loaded successfully'),
             undefined,
-            error => console.error('Error loading Earth specular texture:', error)
+            error => {
+                console.error('Error loading Earth specular texture:', error);
+                throw error;
+            }
         );
         
-        try {
-            const earthMaterial = new THREE.MeshPhongMaterial({
-                map: earthMap,
-                bumpMap: earthBump,
-                bumpScale: 0.5,
-                specularMap: earthSpec,
-                specular: new THREE.Color(0x333333),
-                shininess: 15
-            });
-            
-            this.earth = new THREE.Mesh(earthGeometry, earthMaterial);
-            this.scene.add(this.earth);
-            this.log('Earth created successfully');
-        } catch (error) {
-            console.error('Failed to create Earth:', error);
-            
-            // Fallback to a basic colored sphere if textures fail
-            const fallbackMaterial = new THREE.MeshPhongMaterial({
-                color: 0x2233ff,
-                shininess: 15
-            });
-            
-            this.earth = new THREE.Mesh(earthGeometry, fallbackMaterial);
-            this.scene.add(this.earth);
-            this.log('Created fallback Earth sphere');
-        }
+        const earthMaterial = new THREE.MeshPhongMaterial({
+            map: earthMap,
+            bumpMap: earthBump,
+            bumpScale: 0.5,
+            specularMap: earthSpec,
+            specular: new THREE.Color(0x333333),
+            shininess: 15
+        });
+        
+        this.earth = new THREE.Mesh(earthGeometry, earthMaterial);
+        this.scene.add(this.earth);
+        this.log('Earth created successfully with textures');
         
         // Add a subtle atmosphere glow
+        this.createAtmosphere();
+    }
+    
+    // Create a basic Earth without textures
+    createBasicEarth() {
+        this.log('Creating basic Earth...');
+        
+        // Create a gradient texture programmatically as fallback
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 256;
+        const context = canvas.getContext('2d');
+        
+        // Create gradient (ocean to land)
+        const gradient = context.createLinearGradient(0, 0, 0, 256);
+        gradient.addColorStop(0, '#1e4877'); // Dark blue (ocean)
+        gradient.addColorStop(0.4, '#4584b4'); // Mid blue (ocean)
+        gradient.addColorStop(0.5, '#4d9f8c'); // Teal (coastal)
+        gradient.addColorStop(0.6, '#8cbc69'); // Light green (lowlands)
+        gradient.addColorStop(0.8, '#928e3c'); // Tan (highlands)
+        gradient.addColorStop(1, '#6e6e6e'); // Gray (mountains)
+        
+        context.fillStyle = gradient;
+        context.fillRect(0, 0, 512, 256);
+        
+        // Create random land masses
+        context.fillStyle = 'rgba(46, 142, 60, 0.4)';
+        for (let i = 0; i < 20; i++) {
+            const x = Math.random() * 512;
+            const y = Math.random() * 256;
+            const radius = 10 + Math.random() * 30;
+            context.beginPath();
+            context.arc(x, y, radius, 0, Math.PI * 2);
+            context.fill();
+        }
+        
+        // Create Earth with this canvas texture
+        const texture = new THREE.CanvasTexture(canvas);
+        const earthGeometry = new THREE.SphereGeometry(this.earthRadius, 64, 64);
+        const earthMaterial = new THREE.MeshPhongMaterial({
+            map: texture,
+            shininess: 10
+        });
+        
+        this.earth = new THREE.Mesh(earthGeometry, earthMaterial);
+        this.scene.add(this.earth);
+        this.log('Basic Earth created successfully');
+        
+        // Add a subtle atmosphere glow
+        this.createAtmosphere();
+    }
+    
+    // Create atmosphere for the Earth
+    createAtmosphere() {
         const atmosphereGeometry = new THREE.SphereGeometry(this.earthRadius * 1.03, 64, 64);
         const atmosphereMaterial = new THREE.MeshPhongMaterial({
             color: 0x88aaff,
