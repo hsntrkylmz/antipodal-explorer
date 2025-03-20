@@ -20,6 +20,9 @@ class EarthVisualizer {
         this.isAnimating = false;
         this.animationFrameId = null;
         
+        // Debug flag
+        this.debug = true;
+        
         // Initialize the 3D scene
         this.init();
         
@@ -31,7 +34,15 @@ class EarthVisualizer {
         this.animate = this.animate.bind(this);
     }
     
+    log(message) {
+        if (this.debug) {
+            console.log(`[EarthVisualizer] ${message}`);
+        }
+    }
+    
     init() {
+        this.log('Initializing 3D Earth...');
+        
         // Create scene
         this.scene = new THREE.Scene();
         
@@ -45,13 +56,30 @@ class EarthVisualizer {
         this.camera.position.z = 300;
         
         // Create renderer
-        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        this.renderer = new THREE.WebGLRenderer({ 
+            antialias: true, 
+            alpha: true 
+        });
         this.renderer.setSize(this.container.offsetWidth, this.container.offsetHeight);
         this.renderer.setPixelRatio(window.devicePixelRatio);
+        
+        // Clear container before appending
+        while (this.container.firstChild) {
+            this.container.removeChild(this.container.firstChild);
+        }
+        
         this.container.appendChild(this.renderer.domElement);
         
+        // Add OrbitControls
+        this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.enableDamping = true;
+        this.controls.dampingFactor = 0.05;
+        this.controls.rotateSpeed = 0.5;
+        this.controls.minDistance = 150;
+        this.controls.maxDistance = 500;
+        
         // Create lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
         this.scene.add(ambientLight);
         
         const sunLight = new THREE.DirectionalLight(0xffffff, 1);
@@ -70,30 +98,65 @@ class EarthVisualizer {
         
         // Start animation loop
         this.animate();
+        
+        this.log('3D Earth initialized successfully');
     }
     
     createEarth() {
+        this.log('Creating Earth...');
+        
         // Load Earth texture
         const textureLoader = new THREE.TextureLoader();
         
-        // URLs for Earth textures
+        // URLs for Earth textures (using Three.js examples)
         const earthMapUrl = 'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_atmos_2048.jpg';
         const earthBumpUrl = 'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_normal_2048.jpg';
         const earthSpecUrl = 'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_specular_2048.jpg';
         
-        // Create Earth sphere
+        // Create Earth sphere with proper error handling
         const earthGeometry = new THREE.SphereGeometry(this.earthRadius, 64, 64);
-        const earthMaterial = new THREE.MeshPhongMaterial({
-            map: textureLoader.load(earthMapUrl),
-            bumpMap: textureLoader.load(earthBumpUrl),
-            bumpScale: 0.5,
-            specularMap: textureLoader.load(earthSpecUrl),
-            specular: new THREE.Color(0x333333),
-            shininess: 15
-        });
         
-        this.earth = new THREE.Mesh(earthGeometry, earthMaterial);
-        this.scene.add(this.earth);
+        try {
+            const earthMaterial = new THREE.MeshPhongMaterial({
+                map: textureLoader.load(
+                    earthMapUrl,
+                    undefined,
+                    undefined,
+                    error => console.error('Error loading Earth map texture:', error)
+                ),
+                bumpMap: textureLoader.load(
+                    earthBumpUrl,
+                    undefined,
+                    undefined,
+                    error => console.error('Error loading Earth bump texture:', error)
+                ),
+                bumpScale: 0.5,
+                specularMap: textureLoader.load(
+                    earthSpecUrl,
+                    undefined,
+                    undefined,
+                    error => console.error('Error loading Earth specular texture:', error)
+                ),
+                specular: new THREE.Color(0x333333),
+                shininess: 15
+            });
+            
+            this.earth = new THREE.Mesh(earthGeometry, earthMaterial);
+            this.scene.add(this.earth);
+            this.log('Earth created successfully');
+        } catch (error) {
+            console.error('Failed to create Earth:', error);
+            
+            // Fallback to a basic colored sphere if textures fail
+            const fallbackMaterial = new THREE.MeshPhongMaterial({
+                color: 0x2233ff,
+                shininess: 15
+            });
+            
+            this.earth = new THREE.Mesh(earthGeometry, fallbackMaterial);
+            this.scene.add(this.earth);
+            this.log('Created fallback Earth sphere');
+        }
         
         // Add a subtle atmosphere glow
         const atmosphereGeometry = new THREE.SphereGeometry(this.earthRadius * 1.03, 64, 64);
@@ -122,17 +185,22 @@ class EarthVisualizer {
     
     // Set marker at a specific lat,lng position
     setMarkerPosition(markerID, lat, lng) {
-        const position = this.latLngTo3d(lat, lng, this.earthRadius);
+        this.log(`Setting marker ${markerID} at position ${lat.toFixed(2)}, ${lng.toFixed(2)}`);
+        const position = this.latLngTo3d(lat, lng, this.earthRadius * 1.01);
         
         // Check if marker already exists, remove it if it does
         if (markerID === 'start-marker' && this.startMarker) {
+            this.log('Removing existing start marker');
             this.scene.remove(this.startMarker);
+            if (this.startMarker.halo) this.scene.remove(this.startMarker.halo);
         } else if (markerID === 'end-marker' && this.endMarker) {
+            this.log('Removing existing end marker');
             this.scene.remove(this.endMarker);
+            if (this.endMarker.halo) this.scene.remove(this.endMarker.halo);
         }
         
         // Create a new marker
-        const markerGeometry = new THREE.SphereGeometry(2, 16, 16);
+        const markerGeometry = new THREE.SphereGeometry(2.5, 16, 16);
         const markerMaterial = new THREE.MeshBasicMaterial({
             color: markerID === 'start-marker' ? 0x1e88e5 : 0xff4081
         });
@@ -150,7 +218,7 @@ class EarthVisualizer {
         this.scene.add(marker);
         
         // Add a pulsing effect to the marker (halo)
-        const haloGeometry = new THREE.SphereGeometry(4, 16, 16);
+        const haloGeometry = new THREE.SphereGeometry(5, 16, 16);
         const haloMaterial = new THREE.MeshBasicMaterial({
             color: markerID === 'start-marker' ? 0x1e88e5 : 0xff4081,
             transparent: true,
@@ -162,10 +230,18 @@ class EarthVisualizer {
         marker.halo = halo;
         
         this.scene.add(halo);
+        
+        // For debugging - add axes helper
+        if (this.debug) {
+            const axesHelper = new THREE.AxesHelper(10);
+            marker.add(axesHelper);
+        }
     }
     
     // Draw path between start and end points through the Earth
     drawDigPath(startLat, startLng, endLat, endLng) {
+        this.log(`Drawing dig path from ${startLat.toFixed(2)}, ${startLng.toFixed(2)} to ${endLat.toFixed(2)}, ${endLng.toFixed(2)}`);
+        
         // Remove existing path if any
         if (this.digLine) {
             this.scene.remove(this.digLine);
@@ -201,11 +277,9 @@ class EarthVisualizer {
         // Create geometry from points
         const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
         
-        // Create dashed line material
-        const lineMaterial = new THREE.LineDashedMaterial({
+        // Create line material
+        const lineMaterial = new THREE.LineBasicMaterial({
             color: 0xff4081,
-            dashSize: 3,
-            gapSize: 1,
             opacity: 0.7,
             transparent: true,
             visible: false
@@ -213,7 +287,6 @@ class EarthVisualizer {
         
         // Create line
         this.digLine = new THREE.Line(lineGeometry, lineMaterial);
-        this.digLine.computeLineDistances(); // Required for dashed lines
         this.scene.add(this.digLine);
         
         return points;
@@ -221,6 +294,13 @@ class EarthVisualizer {
     
     // Rotate the Earth to show a specific point
     rotateTo(lat, lng, duration = 1000) {
+        this.log(`Rotating Earth to ${lat.toFixed(2)}, ${lng.toFixed(2)}`);
+        
+        // Disable controls during rotation
+        if (this.controls) {
+            this.controls.enabled = false;
+        }
+        
         const targetPosition = this.latLngTo3d(lat, lng, this.earthRadius);
         const startRotation = {
             x: this.earth.rotation.x,
@@ -231,9 +311,21 @@ class EarthVisualizer {
         // Calculate the quaternions for smooth rotation
         const startQuaternion = new THREE.Quaternion().copy(this.earth.quaternion);
         
-        // Set earth rotation to make the target point face the camera
-        this.earth.lookAt(this.camera.position);
-        const targetQuaternion = new THREE.Quaternion().copy(this.earth.quaternion);
+        // Calculate the target rotation that would place the point facing the camera
+        const dummyEarth = new THREE.Object3D();
+        dummyEarth.position.copy(this.earth.position);
+        
+        // Add a point at the target position
+        const dummyPoint = new THREE.Object3D();
+        dummyPoint.position.copy(targetPosition.normalize().multiplyScalar(this.earthRadius));
+        dummyEarth.add(dummyPoint);
+        
+        // Make the dummy earth face the camera with the point
+        const cameraDir = new THREE.Vector3(0, 0, 1);
+        const targetDir = dummyPoint.position.clone().normalize();
+        
+        dummyEarth.quaternion.setFromUnitVectors(targetDir, cameraDir);
+        const targetQuaternion = dummyEarth.quaternion.clone();
         
         // Reset to original rotation
         this.earth.rotation.set(startRotation.x, startRotation.y, startRotation.z);
@@ -257,6 +349,10 @@ class EarthVisualizer {
                 if (progress < 1) {
                     requestAnimationFrame(animate);
                 } else {
+                    // Re-enable controls
+                    if (this.controls) {
+                        this.controls.enabled = true;
+                    }
                     resolve();
                 }
             };
@@ -267,7 +363,13 @@ class EarthVisualizer {
     
     // Animate the journey through the Earth
     async startJourneyAnimation(startLat, startLng, endLat, endLng) {
-        if (this.isAnimating) return;
+        this.log('Starting journey animation');
+        
+        if (this.isAnimating) {
+            this.log('Animation already in progress, returning');
+            return;
+        }
+        
         this.isAnimating = true;
         
         const steps = [
@@ -283,68 +385,80 @@ class EarthVisualizer {
             { progress: 100, status: "Arrived at your antipodal point!" }
         ];
         
-        // First rotate to show the starting point
-        await this.rotateTo(startLat, startLng);
-        
-        // Make path visible
-        if (this.digLine) {
-            this.digLine.material.visible = true;
-        }
-        
-        // Create a traveling sphere that moves along the path
-        const travellerGeometry = new THREE.SphereGeometry(3, 16, 16);
-        const travellerMaterial = new THREE.MeshBasicMaterial({
-            color: 0xffff00,
-            emissive: 0xffff00,
-            emissiveIntensity: 1
-        });
-        
-        const traveller = new THREE.Mesh(travellerGeometry, travellerMaterial);
-        this.scene.add(traveller);
-        
-        // Get path points
-        const pathPoints = this.drawDigPath(startLat, startLng, endLat, endLng);
-        
-        // Animate through steps
-        for (let i = 0; i < steps.length; i++) {
-            // Update progress UI
-            this.progressBar.style.width = `${steps[i].progress}%`;
-            this.statusText.textContent = steps[i].status;
+        try {
+            // First rotate to show the starting point
+            await this.rotateTo(startLat, startLng);
             
-            // Calculate traveller position along the path
-            const pathIndex = Math.floor((steps[i].progress / 100) * (pathPoints.length - 1));
-            if (pathPoints[pathIndex]) {
-                traveller.position.copy(pathPoints[pathIndex]);
+            // Make path visible
+            if (this.digLine) {
+                this.digLine.material.visible = true;
             }
             
-            // When halfway, start rotating to the end point
-            if (steps[i].progress === 50) {
-                await this.rotateTo(endLat, endLng, 2000);
+            // Create a traveling sphere that moves along the path
+            const travellerGeometry = new THREE.SphereGeometry(4, 16, 16);
+            const travellerMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffff00,
+                emissive: 0xffff00,
+                emissiveIntensity: 1
+            });
+            
+            const traveller = new THREE.Mesh(travellerGeometry, travellerMaterial);
+            this.scene.add(traveller);
+            
+            // Get path points
+            const pathPoints = this.drawDigPath(startLat, startLng, endLat, endLng);
+            
+            // Animate through steps
+            for (let i = 0; i < steps.length; i++) {
+                this.log(`Journey step ${i+1}/${steps.length}: ${steps[i].status}`);
+                
+                // Update progress UI
+                this.progressBar.style.width = `${steps[i].progress}%`;
+                this.statusText.textContent = steps[i].status;
+                
+                // Calculate traveller position along the path
+                const pathIndex = Math.floor((steps[i].progress / 100) * (pathPoints.length - 1));
+                if (pathPoints[pathIndex]) {
+                    traveller.position.copy(pathPoints[pathIndex]);
+                }
+                
+                // When halfway, start rotating to the end point
+                if (steps[i].progress === 50) {
+                    await this.rotateTo(endLat, endLng, 2000);
+                }
+                
+                // Wait before next step
+                await new Promise(resolve => setTimeout(resolve, 1000));
             }
             
-            // Wait before next step
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            // Animation complete
+            document.getElementById('journey-animation').classList.add('completed');
+            document.getElementById('end-location').classList.remove('hidden');
+            document.getElementById('reset-btn').classList.remove('hidden');
+            
+            // Clean up
+            setTimeout(() => {
+                this.scene.remove(traveller);
+            }, 2000);
+            
+        } catch (error) {
+            console.error('Error during journey animation:', error);
+        } finally {
+            this.isAnimating = false;
         }
-        
-        // Animation complete
-        document.getElementById('journey-animation').classList.add('completed');
-        document.getElementById('end-location').classList.remove('hidden');
-        document.getElementById('reset-btn').classList.remove('hidden');
-        
-        // Clean up
-        setTimeout(() => {
-            this.scene.remove(traveller);
-        }, 2000);
-        
-        this.isAnimating = false;
     }
     
     // Animation loop
     animate() {
         this.animationFrameId = requestAnimationFrame(this.animate);
         
+        // Update orbit controls if enabled
+        if (this.controls) {
+            this.controls.update();
+        }
+        
         // Slowly rotate earth when not animating
-        if (!this.isAnimating) {
+        if (!this.isAnimating && this.earth && !this.controls.enabled) {
             this.earth.rotation.y += 0.001;
         }
         
@@ -359,11 +473,16 @@ class EarthVisualizer {
             this.endMarker.halo.scale.set(scale, scale, scale);
         }
         
-        this.renderer.render(this.scene, this.camera);
+        // Render scene
+        if (this.renderer && this.scene && this.camera) {
+            this.renderer.render(this.scene, this.camera);
+        }
     }
     
     // Reset the earth visualization
     reset() {
+        this.log('Resetting Earth visualization');
+        
         // Remove markers
         if (this.startMarker) {
             this.scene.remove(this.startMarker);
@@ -385,8 +504,14 @@ class EarthVisualizer {
         
         // Reset animation state
         this.isAnimating = false;
+        
+        // Re-enable controls
+        if (this.controls) {
+            this.controls.enabled = true;
+        }
     }
 }
 
 // Create earth visualizer instance
+console.log('Creating Earth visualizer instance');
 const earthVisualizer = new EarthVisualizer();
