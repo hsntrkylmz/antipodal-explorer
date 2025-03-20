@@ -705,3 +705,18 @@ button, a, input[type="button"] {
     cursor: not-allowed;
     transform: none;
 }
+
+/* Marker labels */
+.marker-label {
+    color: #ffffff;
+    font-family: 'Roboto', sans-serif;
+    font-size: 12px;
+    padding: 2px 4px;
+    background-color: rgba(0, 0, 0, 0.7);
+    border-radius: 4px;
+    white-space: nowrap;
+    pointer-events: none;
+    user-select: none;
+    text-shadow: 1px 1px 1px rgba(0,0,0,0.5);
+    margin-top: -20px;
+}

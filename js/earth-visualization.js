@@ -55,6 +55,7 @@ class EarthVisualizer {
         this.lastAnimateTime = 0;
         this.rotationSpeed = 0.0005;
         this.tunnelMeshes = [];
+        this.animationCallbacks = [];
         
         // Prepare variables for animation
         this.startMarker = null;
@@ -75,6 +76,26 @@ class EarthVisualizer {
             this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
             this.container.appendChild(this.renderer.domElement);
+            
+            // Create CSS2D renderer for labels
+            if (typeof CSS2DRenderer !== 'undefined') {
+                this.labelRenderer = new CSS2DRenderer();
+                this.labelRenderer.setSize(this.container.clientWidth, this.container.clientHeight);
+                this.labelRenderer.domElement.style.position = 'absolute';
+                this.labelRenderer.domElement.style.top = '0';
+                this.labelRenderer.domElement.style.pointerEvents = 'none';
+                this.container.appendChild(this.labelRenderer.domElement);
+            } else {
+                console.warn('CSS2DRenderer not available, labels will not be shown');
+                
+                // Define a simple CSS2DObject for compatibility
+                window.CSS2DObject = class CSS2DObject extends THREE.Object3D {
+                    constructor(element) {
+                        super();
+                        this.element = element;
+                    }
+                };
+            }
             
             // Add ambient light
             const ambientLight = new THREE.AmbientLight(0x333333);
@@ -178,11 +199,17 @@ class EarthVisualizer {
             this.controls.enableDamping = true;
             this.controls.dampingFactor = 0.1;
             this.controls.rotateSpeed = 0.5;
+            this.controls.enableZoom = true;
+            this.controls.enablePan = false;
             this.controls.autoRotate = true;
             this.controls.autoRotateSpeed = 0.5;
-            this.controls.enablePan = false;
             this.controls.minDistance = 1.5;
             this.controls.maxDistance = 5;
+            
+            // Limit vertical rotation to avoid flipping
+            this.controls.minPolarAngle = Math.PI * 0.1;  // Limit top view
+            this.controls.maxPolarAngle = Math.PI * 0.9;  // Limit bottom view
+            
             this.log('Camera controls initialized successfully');
             return true;
         } catch (error) {
@@ -933,183 +960,125 @@ class EarthVisualizer {
     
     // Set marker at a specific lat,lng position and focus on it
     setMarkerPosition(markerID, lat, lng, shouldFocus = true) {
-        this.log(`Setting marker ${markerID} at position ${lat.toFixed(2)}, ${lng.toFixed(2)}`);
-        const position = this.latLngTo3d(lat, lng, this.earthRadius * 1.02);
+        this.log(`Setting marker ${markerID} at position ${lat}, ${lng}`);
         
-        // Clean up existing marker if it exists
-        if (this.markerGroups[markerID]) {
-            this.scene.remove(this.markerGroups[markerID]);
-            // Properly dispose geometries and materials to avoid memory leaks
-            this.markerGroups[markerID].traverse((object) => {
-                if (object.geometry) object.geometry.dispose();
-                if (object.material) {
-                    if (Array.isArray(object.material)) {
-                        object.material.forEach(material => material.dispose());
-                    } else {
-                        object.material.dispose();
+        // Calculate 3D position from lat/lng
+        const position = this.latLngTo3d(lat, lng, this.earthRadius);
+        
+        try {
+            // Check if a marker with this ID already exists, remove it if it does
+            if (this.markerGroups[markerID]) {
+                this.scene.remove(this.markerGroups[markerID]);
+                // Clean up geometries and materials
+                this.markerGroups[markerID].traverse((object) => {
+                    if (object.geometry) object.geometry.dispose();
+                    if (object.material) {
+                        if (Array.isArray(object.material)) {
+                            object.material.forEach(m => m.dispose());
+                        } else {
+                            object.material.dispose();
+                        }
                     }
-                }
-            });
-        }
-        
-        // Create a marker group
-        const markerGroup = new THREE.Group();
-        markerGroup.name = markerID;
-        
-        // Determine marker properties based on type
-        const isStartMarker = markerID === 'start-marker';
-        const pinColor = isStartMarker ? 0x00ff00 : 0xff0000;
-        const labelText = isStartMarker ? 'Start' : 'Destination';
-        
-        // Create pin head with glow effect
-        const pinHeadGeometry = new THREE.SphereGeometry(0.04, 16, 16);
-        const pinMaterial = new THREE.MeshPhongMaterial({
-            color: pinColor,
-            emissive: pinColor,
-            emissiveIntensity: 0.5,
-            shininess: 30
-        });
-        
-        const pinHead = new THREE.Mesh(pinHeadGeometry, pinMaterial);
-        pinHead.position.copy(position);
-        markerGroup.add(pinHead);
-        
-        // Add a glow effect around the pin head
-        const glowGeometry = new THREE.SphereGeometry(0.06, 16, 16);
-        const glowMaterial = new THREE.MeshBasicMaterial({
-            color: pinColor,
-            transparent: true,
-            opacity: 0.3,
-            side: THREE.BackSide
-        });
-        
-        const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-        glow.position.copy(position);
-        markerGroup.add(glow);
-        
-        // Create pin stem (pointing into the Earth)
-        const stemLength = 0.08;
-        const pinStemGeometry = new THREE.CylinderGeometry(0.01, 0.02, stemLength, 8);
-        const pinStem = new THREE.Mesh(pinStemGeometry, pinMaterial);
-        
-        // Calculate stem position and orientation
-        const direction = position.clone().normalize();
-        const stemPosition = position.clone().sub(direction.clone().multiplyScalar(stemLength/2));
-        pinStem.position.copy(stemPosition);
-        
-        // Orient stem to point toward Earth center
-        pinStem.quaternion.setFromUnitVectors(
-            new THREE.Vector3(0, 1, 0), 
-            direction.clone()
-        );
-        
-        markerGroup.add(pinStem);
-        
-        // Add a circular halo around the marker
-        const haloGeometry = new THREE.RingGeometry(0.06, 0.09, 32);
-        const haloMaterial = new THREE.MeshBasicMaterial({
-            color: pinColor,
-            transparent: true,
-            opacity: 0.6,
-            side: THREE.DoubleSide
-        });
-        
-        const halo = new THREE.Mesh(haloGeometry, haloMaterial);
-        halo.position.copy(position);
-        
-        // Make halo face the camera
-        halo.lookAt(this.camera.position);
-        
-        // Add event to update halo orientation on camera change
-        const updateHaloOrientation = () => {
-            halo.lookAt(this.camera.position);
-        };
-        
-        // Store the function so we can remove it later
-        halo.userData.updateOrientation = updateHaloOrientation;
-        
-        // Add event listener to camera movement
-        if (this.controls) {
-            this.controls.addEventListener('change', updateHaloOrientation);
-        }
-        
-        markerGroup.add(halo);
-        
-        // Create text label
-        const canvas = document.createElement('canvas');
-        canvas.width = 128;
-        canvas.height = 64;
-        const context = canvas.getContext('2d');
-        
-        // Draw label with background
-        context.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        context.fillRect(0, 0, canvas.width, canvas.height);
-        
-        // Draw border
-        context.strokeStyle = pinColor;
-        context.lineWidth = 3;
-        context.strokeRect(3, 3, canvas.width - 6, canvas.height - 6);
-        
-        // Draw text
-        context.fillStyle = isStartMarker ? '#00ff00' : '#ff0000';
-        context.font = 'bold 24px Arial';
-        context.textAlign = 'center';
-        context.textBaseline = 'middle';
-        context.fillText(labelText, canvas.width / 2, canvas.height / 2);
-        
-        // Create sprite
-        const labelTexture = new THREE.CanvasTexture(canvas);
-        const labelMaterial = new THREE.SpriteMaterial({
-            map: labelTexture,
-            transparent: true
-        });
-        
-        const label = new THREE.Sprite(labelMaterial);
-        
-        // Position label above the marker
-        const labelPos = position.clone().multiplyScalar(1.2);
-        label.position.copy(labelPos);
-        label.scale.set(0.2, 0.1, 1);
-        
-        // Make label face the camera
-        const updateLabelOrientation = () => {
-            label.position.copy(position.clone().multiplyScalar(1.2));
-        };
-        
-        // Store the function so we can remove it later
-        label.userData.updateOrientation = updateLabelOrientation;
-        
-        // Add event listener for camera movement
-        if (this.controls) {
-            this.controls.addEventListener('change', updateLabelOrientation);
-        }
-        
-        markerGroup.add(label);
-        
-        // Log marker creation
-        console.log(`Created marker ${markerID} at: ${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}`);
-        
-        // Store in markerGroups and add to scene
-        this.markerGroups[markerID] = markerGroup;
-        this.scene.add(markerGroup);
-        
-        // Pulse the marker when first created
-        this.pulseMarker(markerID, 0.8);
-        
-        // For compatibility with old code
-        if (isStartMarker) {
-            this.startMarker = markerGroup;
-            
-            // Only focus on starting point marker
-            if (shouldFocus) {
-                this.focusOnLocation(position, 1500);
+                });
+                delete this.markerGroups[markerID];
             }
-        } else if (markerID === 'end-marker') {
-            this.endMarker = markerGroup;
-            // Don't automatically focus on end marker until animation
+            
+            // Create a new marker group
+            const markerGroup = new THREE.Group();
+            markerGroup.name = markerID;
+            
+            // Create pin head (sphere)
+            const headGeometry = new THREE.SphereGeometry(0.02, 16, 16);
+            const headMaterial = new THREE.MeshPhongMaterial({
+                color: markerID === 'start-marker' ? 0xff0000 : 0x00ff00,
+                emissive: markerID === 'start-marker' ? 0x880000 : 0x008800,
+                emissiveIntensity: 0.5,
+                shininess: 30
+            });
+            
+            const head = new THREE.Mesh(headGeometry, headMaterial);
+            head.position.copy(position);
+            markerGroup.add(head);
+            
+            // Create pin stem (cylinder)
+            const direction = position.clone().normalize();
+            const cylinderHeight = 0.1;
+            const stemGeometry = new THREE.CylinderGeometry(0.005, 0.005, cylinderHeight, 8);
+            const stemMaterial = new THREE.MeshPhongMaterial({
+                color: markerID === 'start-marker' ? 0xff0000 : 0x00ff00
+            });
+            
+            const stem = new THREE.Mesh(stemGeometry, stemMaterial);
+            
+            // Position stem at half height along the direction from center
+            const stemPosition = position.clone().sub(
+                direction.clone().multiplyScalar(cylinderHeight / 2)
+            );
+            stem.position.copy(stemPosition);
+            
+            // Orient stem to point outward from globe center
+            stem.quaternion.setFromUnitVectors(
+                new THREE.Vector3(0, 1, 0),
+                direction
+            );
+            
+            markerGroup.add(stem);
+            
+            // Add a halo effect
+            const haloGeometry = new THREE.RingGeometry(0.03, 0.04, 32);
+            const haloMaterial = new THREE.MeshBasicMaterial({
+                color: markerID === 'start-marker' ? 0xff0000 : 0x00ff00,
+                transparent: true,
+                opacity: 0.6,
+                side: THREE.DoubleSide
+            });
+            
+            const halo = new THREE.Mesh(haloGeometry, haloMaterial);
+            halo.position.copy(position);
+            
+            // Orient halo to face the camera
+            const updateHaloOrientation = () => {
+                if (halo && this.camera) {
+                    halo.lookAt(this.camera.position);
+                }
+            };
+            
+            // Add to animation loop for continuous updates
+            this.animationCallbacks.push(updateHaloOrientation);
+            
+            markerGroup.add(halo);
+            
+            // Add text label with coordinates
+            const labelDiv = document.createElement('div');
+            labelDiv.className = 'marker-label';
+            labelDiv.textContent = `${lat.toFixed(2)}, ${lng.toFixed(2)}`;
+            labelDiv.style.color = markerID === 'start-marker' ? 'red' : 'green';
+            labelDiv.style.fontWeight = 'bold';
+            
+            const label = new CSS2DObject(labelDiv);
+            label.position.copy(position);
+            
+            // Adjust label position slightly above marker
+            label.position.add(direction.clone().multiplyScalar(0.05));
+            
+            markerGroup.add(label);
+            
+            // Store reference to the marker group
+            this.markerGroups[markerID] = markerGroup;
+            
+            // Add to scene
+            this.scene.add(markerGroup);
+            
+            // Focus on the marker if requested
+            if (shouldFocus) {
+                this.focusOnLocation(position);
+            }
+            
+            return true;
+        } catch (error) {
+            console.error(`Error setting marker ${markerID}:`, error);
+            return false;
         }
-        
-        return position;
     }
     
     // Focus camera on a specific location on the globe
@@ -1702,45 +1671,52 @@ class EarthVisualizer {
     
     // Main animation loop
     animate() {
-        // Calculate time delta for smooth animation
-        const now = performance.now();
-        let deltaTime = 0;
-        
-        if (this.lastAnimateTime > 0) {
-            deltaTime = (now - this.lastAnimateTime) / 1000; // Convert to seconds
-        }
-        
-        this.lastAnimateTime = now;
-        
-        // Request the next frame first to ensure smooth animation
-        requestAnimationFrame(this.animate.bind(this));
-        
-        // Skip if earth not initialized yet
-        if (!this.earth) return;
-        
-        // Rotate Earth and clouds if controls are enabled and not animating camera
-        if (this.controls && !this.controls.autoRotate && !this.isCameraAnimating) {
-            // Apply rotation based on delta time for consistent speed
-            this.earth.rotation.y += this.rotationSpeed * deltaTime * 60; // Normalize to 60fps
+        const animate = () => {
+            requestAnimationFrame(animate);
             
-            if (this.clouds) {
-                // Clouds rotate slightly faster than Earth
-                this.clouds.rotation.y += this.rotationSpeed * 1.1 * deltaTime * 60;
+            try {
+                // Get time difference for smooth animations
+                const currentTime = Date.now();
+                const deltaTime = (currentTime - this.lastAnimateTime) / 1000; // Convert to seconds
+                this.lastAnimateTime = currentTime;
+                
+                // Update marker orientation callbacks if any
+                if (this.animationCallbacks) {
+                    for (const callback of this.animationCallbacks) {
+                        callback();
+                    }
+                }
+                
+                // Update controls
+                if (this.controls && this.controls.update) {
+                    this.controls.update();
+                }
+                
+                // Slowly rotate clouds if they exist
+                if (this.clouds) {
+                    this.clouds.rotation.y += deltaTime * 0.01;
+                }
+                
+                // Update animation if active
+                if (this.isAnimating && this.digPath && this.travelerMesh) {
+                    this.updateDiggingAnimation(deltaTime);
+                }
+                
+                // Render the scene
+                this.renderer.render(this.scene, this.camera);
+                
+                // Render CSS2D elements if renderer exists
+                if (this.labelRenderer) {
+                    this.labelRenderer.render(this.scene, this.camera);
+                }
+            } catch (error) {
+                console.error('Error in animation loop:', error);
+                // Don't stop the animation loop on errors
             }
-        }
+        };
         
-        // Update controls if available
-        if (this.controls) {
-            this.controls.update();
-        }
-        
-        // Animate digging traveler if animation is active
-        if (this.isAnimating && this.travelerMesh) {
-            this.updateDiggingAnimation(deltaTime);
-        }
-        
-        // Render the scene
-        this.renderer.render(this.scene, this.camera);
+        this.lastAnimateTime = Date.now();
+        animate();
     }
     
     // Update digging animation with time delta
@@ -1794,14 +1770,16 @@ class EarthVisualizer {
     
     // Update the window resize event
     onWindowResize() {
-        if (!this.camera || !this.renderer || !this.container) return;
+        if (!this.container || !this.camera || !this.renderer) return;
         
-        // Update camera aspect ratio
         this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
         this.camera.updateProjectionMatrix();
         
-        // Update renderer size
         this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+        
+        if (this.labelRenderer) {
+            this.labelRenderer.setSize(this.container.clientWidth, this.container.clientHeight);
+        }
     }
     
     // Utility function for logging with timestamp
@@ -1945,50 +1923,39 @@ class EarthVisualizer {
     
     // Focus on a specific marker by ID with animation
     focusOnMarker(markerID, duration = 1000) {
-        const markerGroup = this.markerGroups[markerID];
+        this.log(`Focusing on marker ${markerID}`);
         
-        if (!markerGroup) {
-            this.log(`Error: Marker "${markerID}" not found`);
+        // First, try to find the marker in our marker groups
+        if (!this.markerGroups[markerID]) {
+            console.error(`Marker ${markerID} not found`);
             return false;
         }
         
-        // Get marker position
-        let markerPosition;
-        
-        // Find first mesh in the group to get position
-        markerGroup.traverse((object) => {
-            if (!markerPosition && object.isMesh) {
-                markerPosition = object.position.clone();
+        try {
+            // Get the marker's position
+            let markerPosition = null;
+            
+            // Try to find a mesh or object in the marker group to get the position
+            this.markerGroups[markerID].traverse((object) => {
+                if (!markerPosition && (object.isMesh || object.isObject3D)) {
+                    if (object !== this.markerGroups[markerID]) {
+                        markerPosition = object.position.clone();
+                    }
+                }
+            });
+            
+            if (!markerPosition) {
+                console.error(`Could not find a valid position for marker ${markerID}`);
+                return false;
             }
-        });
-        
-        if (!markerPosition) {
-            this.log(`Error: Could not find position for marker "${markerID}"`);
+            
+            // Focus on this position
+            this.focusOnLocation(markerPosition, duration);
+            return true;
+        } catch (error) {
+            console.error(`Error focusing on marker ${markerID}:`, error);
             return false;
         }
-        
-        // Calculate position to view the marker from a good angle
-        const cameraDistance = 2.5;
-        const cameraTarget = markerPosition.clone();
-        
-        // Position slightly offset from the direct line to the center
-        const offsetDirection = markerPosition.clone().normalize();
-        const cameraPosition = markerPosition.clone().add(
-            offsetDirection.multiplyScalar(cameraDistance - 1)
-        );
-        
-        // Ensure we're not inside the Earth
-        if (cameraPosition.length() < this.earthRadius) {
-            cameraPosition.normalize().multiplyScalar(this.earthRadius * 1.5);
-        }
-        
-        // Animate camera to focus position
-        this.animateCameraToPosition(cameraPosition, cameraTarget, duration, () => {
-            // Pulse the marker when focus is complete
-            this.pulseMarker(markerID);
-        });
-        
-        return true;
     }
     
     // Focus camera on a specific 3D position
@@ -2066,38 +2033,62 @@ class EarthVisualizer {
     
     // Add a new method for setting up event listeners
     setupEventListeners() {
-        console.log('Setting up event listeners for globe clicks');
+        this.log('Setting up event listeners');
         
-        // Track click and drag events to distinguish between clicks and drags
+        // Initialize arrays to store callbacks for animation loop
+        this.animationCallbacks = [];
+        
+        // Variables to track drag state
         let isDragging = false;
-        let clickStartTime = 0;
+        let dragStart = { x: 0, y: 0 };
         
-        this.renderer.domElement.addEventListener('mousedown', () => {
+        // Disable autorotation during interaction
+        this.renderer.domElement.addEventListener('mousedown', (event) => {
             isDragging = false;
-            clickStartTime = Date.now();
+            dragStart.x = event.clientX;
+            dragStart.y = event.clientY;
+            
+            // Disable auto-rotation during interaction
+            if (this.controls && this.controls.autoRotate) {
+                this.wasAutoRotating = true;
+                this.controls.autoRotate = false;
+            }
         });
         
-        this.renderer.domElement.addEventListener('mousemove', () => {
-            // Consider dragging if mouse moves during a click
-            if (Date.now() - clickStartTime > 100) {
+        this.renderer.domElement.addEventListener('mousemove', (event) => {
+            // Consider dragging if mouse moves beyond a small threshold
+            const moveThreshold = 5;
+            if (!isDragging && 
+                (Math.abs(event.clientX - dragStart.x) > moveThreshold || 
+                 Math.abs(event.clientY - dragStart.y) > moveThreshold)) {
                 isDragging = true;
             }
         });
         
-        // Add click event listener to the renderer's canvas
+        this.renderer.domElement.addEventListener('mouseup', (event) => {
+            // Re-enable auto-rotation if it was previously enabled
+            if (this.wasAutoRotating && this.controls) {
+                setTimeout(() => {
+                    this.controls.autoRotate = true;
+                    this.wasAutoRotating = false;
+                }, 1000); // Delay to prevent immediate rotation after click
+            }
+        });
+        
+        // Handle clicks on the Earth
         this.renderer.domElement.addEventListener('click', (event) => {
-            // Ignore if we're dragging the globe
+            // Ignore if we were dragging
             if (isDragging) {
-                console.log('Ignoring click because user was dragging');
+                this.log('Ignoring click because user was dragging');
                 return;
             }
             
             if (this.isAnimating) {
-                console.log('Ignoring click during animation');
+                this.log('Ignoring click during animation');
                 return;
             }
             
-            console.log('Globe clicked, checking for Earth intersection');
+            this.log('Processing Earth click');
             
             // Get canvas-relative mouse coordinates
             const rect = this.renderer.domElement.getBoundingClientRect();
@@ -2105,47 +2096,13 @@ class EarthVisualizer {
             mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
             mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
             
-            console.log('Mouse coords:', mouse.x, mouse.y);
-            
-            // Create a raycaster for this specific click
+            // Create a raycaster for this click
             const raycaster = new THREE.Raycaster();
             raycaster.setFromCamera(mouse, this.camera);
             
-            // Make sure Earth exists
-            if (!this.earth) {
-                console.error('Earth mesh not found for raycasting');
-                return;
-            }
+            // Only consider the Earth mesh
+            const intersects = raycaster.intersectObject(this.earth, true);
             
-            // Debug: List all objects in the scene to verify Earth is there
-            console.log('Scene contains these objects:');
-            this.scene.traverse(object => {
-                if (object.isMesh) {
-                    console.log(' - Mesh:', object.name || 'unnamed mesh', object.uuid);
-                }
-            });
-            
-            // Try to get direct reference to Earth mesh first
-            let earthMesh = this.earth;
-            
-            // Check if Earth is complex with child objects
-            if (this.earth.children && this.earth.children.length > 0) {
-                // Try to find the main sphere mesh
-                this.earth.traverse(object => {
-                    if (object.isMesh && object.geometry && 
-                        object.geometry.type === 'SphereGeometry') {
-                        earthMesh = object;
-                    }
-                });
-            }
-            
-            console.log('Using Earth mesh for intersection:', earthMesh.uuid);
-            
-            // Intersect only with the Earth mesh
-            const intersects = raycaster.intersectObject(earthMesh, false);
-            console.log('Intersections found:', intersects.length);
-            
-            // If Earth was clicked
             if (intersects.length > 0) {
                 // Get the intersection point and normalize to get direction from center
                 const point = intersects[0].point.clone().normalize();
@@ -2154,7 +2111,7 @@ class EarthVisualizer {
                 const lat = Math.asin(point.y) * (180 / Math.PI);
                 const lng = Math.atan2(point.z, point.x) * (180 / Math.PI);
                 
-                console.log('Clicked position:', lat.toFixed(4), lng.toFixed(4));
+                this.log(`Clicked at lat: ${lat.toFixed(2)}, lng: ${lng.toFixed(2)}`);
                 
                 // Set the start marker at the clicked location
                 this.setMarkerPosition('start-marker', lat, lng, true);
@@ -2174,99 +2131,19 @@ class EarthVisualizer {
                         end: { lat: antiLat, lng: antiLng }
                     }
                 });
-                console.log('Dispatching location-selected event');
+                
                 this.container.dispatchEvent(locationEvent);
                 
                 // Show visual feedback for successful click
                 this.showClickFeedback(intersects[0].point);
                 
                 return true;
-            } else {
-                console.log('No intersection with Earth mesh - trying with clouds or entire scene');
-                
-                // Try clouds next
-                if (this.clouds) {
-                    const cloudIntersects = raycaster.intersectObject(this.clouds, false);
-                    if (cloudIntersects.length > 0) {
-                        console.log('Intersection with clouds found');
-                        // Process as if Earth was clicked directly
-                        const point = cloudIntersects[0].point.clone().normalize();
-                        
-                        // Convert to latitude and longitude
-                        const lat = Math.asin(point.y) * (180 / Math.PI);
-                        const lng = Math.atan2(point.z, point.x) * (180 / Math.PI);
-                        
-                        // Set markers and dispatch event as above
-                        this.setMarkerPosition('start-marker', lat, lng, true);
-                        
-                        const antiLat = -lat;
-                        let antiLng = lng + 180;
-                        if (antiLng > 180) antiLng -= 360;
-                        
-                        this.setMarkerPosition('end-marker', antiLat, antiLng, false);
-                        
-                        const locationEvent = new CustomEvent('location-selected', {
-                            detail: {
-                                start: { lat, lng },
-                                end: { lat: antiLat, lng: antiLng }
-                            }
-                        });
-                        this.container.dispatchEvent(locationEvent);
-                        
-                        // Show feedback
-                        this.showClickFeedback(cloudIntersects[0].point);
-                        return true;
-                    }
-                }
-                
-                // Last resort: try all objects in the scene
-                const allIntersects = raycaster.intersectObjects(this.scene.children, true);
-                console.log('All scene intersections:', allIntersects.length);
-                
-                if (allIntersects.length > 0) {
-                    // Filter to only consider objects that could be the Earth or clouds
-                    const validIntersects = allIntersects.filter(i => {
-                        return i.object.geometry && 
-                               i.object.geometry.type === 'SphereGeometry';
-                    });
-                    
-                    if (validIntersects.length > 0) {
-                        console.log('Found valid intersection with a sphere in scene');
-                        const point = validIntersects[0].point.clone().normalize();
-                        
-                        // Process as above
-                        const lat = Math.asin(point.y) * (180 / Math.PI);
-                        const lng = Math.atan2(point.z, point.x) * (180 / Math.PI);
-                        
-                        // Set markers and dispatch
-                        this.setMarkerPosition('start-marker', lat, lng, true);
-                        
-                        const antiLat = -lat;
-                        let antiLng = lng + 180;
-                        if (antiLng > 180) antiLng -= 360;
-                        
-                        this.setMarkerPosition('end-marker', antiLat, antiLng, false);
-                        
-                        const locationEvent = new CustomEvent('location-selected', {
-                            detail: {
-                                start: { lat, lng },
-                                end: { lat: antiLat, lng: antiLng }
-                            }
-                        });
-                        this.container.dispatchEvent(locationEvent);
-                        
-                        // Show feedback
-                        this.showClickFeedback(validIntersects[0].point);
-                        return true;
-                    }
-                }
-                
-                console.log('No valid intersection found');
-                return false;
             }
+            
+            return false;
         });
         
-        // Add hover effect to show cursor change when hovering over the earth
+        // Add hover effect to show cursor change when hovering over the Earth
         this.renderer.domElement.addEventListener('mousemove', (event) => {
             if (this.isAnimating) return;
             
@@ -2275,16 +2152,10 @@ class EarthVisualizer {
             mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
             mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
             
-            // Use simplified approach for hover detection too
             const raycaster = new THREE.Raycaster();
             raycaster.setFromCamera(mouse, this.camera);
             
-            // Intersect with all objects that could be considered "Earth"
-            const objectsToCheck = [];
-            if (this.earth) objectsToCheck.push(this.earth);
-            if (this.clouds) objectsToCheck.push(this.clouds);
-            
-            const intersects = raycaster.intersectObjects(objectsToCheck, true);
+            const intersects = raycaster.intersectObject(this.earth, true);
             
             if (intersects.length > 0) {
                 this.renderer.domElement.style.cursor = 'pointer';
