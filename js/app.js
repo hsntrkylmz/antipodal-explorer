@@ -339,6 +339,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Listen for globe click events
     earthContainer.addEventListener('location-selected', (event) => {
+        console.log('Received location-selected event:', event.detail);
+        
         // Get the coordinates from the event
         startLocation = event.detail.start;
         endLocation = event.detail.end;
@@ -356,16 +358,25 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(address => {
                 if (address) startAddress.textContent = address;
             })
-            .catch(() => {});
+            .catch((err) => {
+                console.error('Error reverse geocoding start location:', err);
+            });
             
         reverseGeocode(endLocation.lat, endLocation.lng)
             .then(address => {
                 if (address) endAddress.textContent = address;
             })
-            .catch(() => {});
+            .catch((err) => {
+                console.error('Error reverse geocoding end location:', err);
+            });
         
         // Update UI
         digButton.disabled = false;
         endLocation.classList.remove('hidden');
     });
+
+    // Add a confirmation that event listeners are properly attached
+    console.log('Event listeners for location selection attached');
+    console.log('Earth container element:', earthContainer);
+    console.log('Sample buttons:', sampleButtons.length);
 });

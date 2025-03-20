@@ -81,7 +81,7 @@ main {
 .earth-container {
     position: relative;
     width: 100%;
-    height: 450px; /* Increased height */
+    height: 450px;
     margin-bottom: 20px;
     display: flex;
     justify-content: center;
@@ -89,6 +89,7 @@ main {
     overflow: hidden;
     border-radius: 10px;
     box-shadow: 0 10px 30px var(--shadow-color);
+    background-color: #000;
 }
 
 .earth-visualization {
@@ -119,19 +120,22 @@ main {
 }
 
 .earth-instructions p {
-    background-color: rgba(0, 0, 0, 0.7);
-    color: white;
-    padding: 8px 16px;
-    border-radius: 20px;
-    font-size: 0.9rem;
+    background-color: rgba(0, 0, 0, 0.8);
+    color: #ffffff;
+    padding: 10px 20px;
+    border-radius: 25px;
+    font-size: 1rem;
+    font-weight: bold;
+    box-shadow: 0 0 15px rgba(52, 152, 219, 0.5);
+    border: 1px solid var(--accent-color);
     display: inline-block;
     animation: pulse 2s infinite;
 }
 
 @keyframes pulse {
-    0% { transform: scale(1); opacity: 0.8; }
-    50% { transform: scale(1.05); opacity: 1; }
-    100% { transform: scale(1); opacity: 0.8; }
+    0% { transform: scale(1); opacity: 0.9; }
+    50% { transform: scale(1.05); opacity: 1; box-shadow: 0 0 20px rgba(52, 152, 219, 0.7); }
+    100% { transform: scale(1); opacity: 0.9; }
 }
 
 /* Location Panel Styles */
@@ -479,18 +483,21 @@ footer a:hover {
 @media (min-width: 768px) {
     main {
         flex-direction: row;
+        align-items: flex-start;
     }
     
     .earth-container {
         flex: 1.5;
-        height: 600px;
+        height: 550px; /* slightly shorter */
     }
     
     .info-panel {
         flex: 1;
         margin-left: 20px;
-        max-height: 600px;
+        max-height: 550px; /* match earth container */
         overflow-y: auto;
+        position: sticky;
+        top: 20px;
     }
 }
 
@@ -559,37 +566,52 @@ footer a:hover {
 }
 
 .sample-locations {
-    margin: 10px 0 20px;
-    padding: 10px;
-    background-color: rgba(0, 0, 0, 0.2);
-    border-radius: 8px;
-    border: 1px solid var(--border-color);
+    margin: 15px 0 25px;
+    padding: 15px;
+    background-color: rgba(0, 0, 0, 0.3);
+    border-radius: 10px;
+    border: 1px solid var(--accent-color);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
 }
 
 .sample-locations h4 {
     color: var(--accent-color);
-    margin-bottom: 10px;
-    font-size: 0.95rem;
+    margin-bottom: 12px;
+    font-size: 1.1rem;
+    text-align: center;
 }
 
 .sample-buttons {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 10px;
+    justify-content: center;
 }
 
 .sample-btn {
-    background-color: rgba(41, 128, 185, 0.15);
-    color: var(--text-color);
-    border: 1px solid rgba(41, 128, 185, 0.3);
-    padding: 8px 12px;
-    border-radius: 4px;
-    font-size: 0.85rem;
+    background-color: rgba(41, 128, 185, 0.3);
+    color: #ffffff;
+    border: 1px solid rgba(41, 128, 185, 0.5);
+    padding: 10px 15px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: bold;
     cursor: pointer;
     transition: all 0.2s ease;
+    min-width: 110px;
+    text-align: center;
 }
 
 .sample-btn:hover {
-    background-color: rgba(41, 128, 185, 0.3);
-    transform: translateY(-2px);
+    background-color: rgba(41, 128, 185, 0.5);
+    transform: translateY(-3px);
+    box-shadow: 0 5px 10px rgba(0, 0, 0, 0.3);
+}
+
+.sample-instruction {
+    text-align: center;
+    margin-top: 12px;
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.8);
+    font-style: italic;
 }

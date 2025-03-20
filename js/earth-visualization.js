@@ -103,40 +103,20 @@ class EarthVisualizer {
     }
     
     // Create a realistic Earth with actual texture maps
-    createSimpleEarth() {
-        this.log('Creating realistic Earth with texture maps...');
+    createEarth() {
+        console.log('Creating Earth object for visualization');
         
         // Create Earth geometry with higher detail
-        const earthGeometry = new THREE.SphereGeometry(this.earthRadius, 64, 64);
-        
-        // Earth texture maps from NASA/public sources
-        const textureLoader = new THREE.TextureLoader();
-        textureLoader.crossOrigin = "Anonymous";
-        
-        // Use reliable CDN-hosted texture maps
-        const earthTextures = {
-            map: 'https://unpkg.com/three-globe@2.24.4/example/img/earth-blue-marble.jpg',
-            bumpMap: 'https://unpkg.com/three-globe@2.24.4/example/img/earth-topology.png',
-            specularMap: 'https://unpkg.com/three-globe@2.24.4/example/img/earth-water.png',
-            cloudsMap: 'https://unpkg.com/three-globe@2.24.4/example/img/earth-clouds.png'
-        };
+        const radius = 1.0; // Unit radius for easier calculations
+        const earthGeometry = new THREE.SphereGeometry(radius, 64, 64);
         
         // Create material with realistic Earth properties
         const earthMaterial = new THREE.MeshPhongMaterial({
-            map: textureLoader.load(earthTextures.map, 
-                () => this.log('Earth texture loaded successfully'), 
-                undefined, 
-                err => console.error('Failed to load Earth texture:', err)),
-            bumpMap: textureLoader.load(earthTextures.bumpMap, 
-                () => this.log('Bump map loaded successfully'), 
-                undefined, 
-                err => console.error('Failed to load bump map:', err)),
-            bumpScale: 0.8,
-            specularMap: textureLoader.load(earthTextures.specularMap, 
-                () => this.log('Specular map loaded successfully'), 
-                undefined, 
-                err => console.error('Failed to load specular map:', err)),
-            specular: new THREE.Color(0x666666),
+            map: this.textures.earthMap,
+            bumpMap: this.textures.earthBumpMap,
+            bumpScale: 0.05,
+            specularMap: this.textures.earthSpecularMap,
+            specular: new THREE.Color(0x333333),
             shininess: 15
         });
         
@@ -144,23 +124,26 @@ class EarthVisualizer {
         this.earth = new THREE.Mesh(earthGeometry, earthMaterial);
         this.scene.add(this.earth);
         
+        console.log('Earth object created:', this.earth);
+        
+        this.earthRadius = radius; // Store radius for calculations
+        
+        return this.earth;
+    }
+    
+    // Create cloud layer
+    createClouds() {
         // Create clouds layer
         const cloudsGeometry = new THREE.SphereGeometry(this.earthRadius * 1.01, 64, 64);
         const cloudsMaterial = new THREE.MeshPhongMaterial({
-            map: textureLoader.load(earthTextures.cloudsMap,
-                () => this.log('Clouds texture loaded successfully'),
-                undefined,
-                err => console.error('Failed to load clouds texture:', err)),
+            map: this.textures.cloudsMap,
             transparent: true,
             opacity: 0.3,
             blending: THREE.AdditiveBlending
         });
         
-        const clouds = new THREE.Mesh(cloudsGeometry, cloudsMaterial);
-        this.scene.add(clouds);
-        
-        // Add slow rotation to clouds
-        this.clouds = clouds;
+        this.clouds = new THREE.Mesh(cloudsGeometry, cloudsMaterial);
+        this.scene.add(this.clouds);
         
         // Add a subtle glow effect (atmosphere)
         const atmosphereGeometry = new THREE.SphereGeometry(this.earthRadius * 1.02, 64, 64);
@@ -173,40 +156,76 @@ class EarthVisualizer {
         
         const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
         this.scene.add(atmosphere);
-        
-        // Add star field background
-        this.addStarField();
     }
     
-    // Add a star field to enhance the space ambiance
-    addStarField() {
-        const starsGeometry = new THREE.BufferGeometry();
-        const starCount = 5000;
-        const positions = new Float32Array(starCount * 3);
-        const sizes = new Float32Array(starCount);
+    // Create lighting for the scene
+    createLighting() {
+        // Ambient light (overall illumination)
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+        this.scene.add(ambientLight);
         
-        for (let i = 0; i < starCount; i++) {
-            // Random positions for stars
-            positions[i * 3] = (Math.random() - 0.5) * 2000;
-            positions[i * 3 + 1] = (Math.random() - 0.5) * 2000;
-            positions[i * 3 + 2] = (Math.random() - 0.5) * 2000;
-            
-            // Random sizes for stars
-            sizes[i] = Math.random() * 2;
-        }
+        // Main directional light (sunlight)
+        const sunLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        sunLight.position.set(1.5, 0.5, 1);
+        this.scene.add(sunLight);
         
-        starsGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        starsGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-        
-        const starMaterial = new THREE.PointsMaterial({
-            color: 0xffffff,
-            size: 1,
-            transparent: true,
-            sizeAttenuation: true
+        // Add a subtle blue light from the opposite side (earth-shine)
+        const backLight = new THREE.DirectionalLight(0x4466aa, 0.4);
+        backLight.position.set(-1, -0.2, -1);
+        this.scene.add(backLight);
+    }
+    
+    // Load textures
+    loadTextures() {
+        return new Promise((resolve, reject) => {
+            try {
+                const textureLoader = new THREE.TextureLoader();
+                textureLoader.crossOrigin = "Anonymous";
+                
+                this.textures = {
+                    earthMap: null,
+                    earthBumpMap: null,
+                    earthSpecularMap: null,
+                    cloudsMap: null
+                };
+                
+                // Use reliable CDN-hosted texture maps
+                const textureURLs = {
+                    earthMap: 'https://unpkg.com/three-globe@2.24.4/example/img/earth-blue-marble.jpg',
+                    earthBumpMap: 'https://unpkg.com/three-globe@2.24.4/example/img/earth-topology.png',
+                    earthSpecularMap: 'https://unpkg.com/three-globe@2.24.4/example/img/earth-water.png',
+                    cloudsMap: 'https://unpkg.com/three-globe@2.24.4/example/img/earth-clouds.png'
+                };
+                
+                // Load all textures
+                let loadedCount = 0;
+                const totalTextures = Object.keys(textureURLs).length;
+                
+                for (const [key, url] of Object.entries(textureURLs)) {
+                    textureLoader.load(
+                        url,
+                        (texture) => {
+                            this.textures[key] = texture;
+                            loadedCount++;
+                            console.log(`Loaded texture: ${key} (${loadedCount}/${totalTextures})`);
+                            
+                            if (loadedCount === totalTextures) {
+                                console.log('All textures loaded successfully');
+                                resolve();
+                            }
+                        },
+                        undefined,
+                        (error) => {
+                            console.error(`Failed to load texture ${key}:`, error);
+                            reject(error);
+                        }
+                    );
+                }
+            } catch (error) {
+                console.error('Error in loadTextures:', error);
+                reject(error);
+            }
         });
-        
-        const starField = new THREE.Points(starsGeometry, starMaterial);
-        this.scene.add(starField);
     }
     
     // Convert latitude and longitude to 3D position on the globe
@@ -954,20 +973,37 @@ class EarthVisualizer {
     
     // Add a new method for setting up event listeners
     setupEventListeners() {
+        console.log('Setting up event listeners for globe clicks');
+        
         // Add click event listener to the renderer's canvas
         this.renderer.domElement.addEventListener('click', (event) => {
-            if (this.isAnimating) return; // Ignore clicks during animation
+            if (this.isAnimating) {
+                console.log('Ignoring click during animation');
+                return;
+            }
+            
+            console.log('Globe clicked');
             
             // Get canvas-relative mouse coordinates
             const rect = this.renderer.domElement.getBoundingClientRect();
             this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
             this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
             
+            console.log('Mouse coords:', this.mouse.x, this.mouse.y);
+            
             // Perform raycasting to detect intersection with the earth
             this.raycaster.setFromCamera(this.mouse, this.camera);
-            const intersects = this.raycaster.intersectObject(this.earth);
             
-            // If the earth was clicked
+            // Create an array of objects to check for intersection
+            const objectsToCheck = [];
+            if (this.earth) objectsToCheck.push(this.earth);
+            if (this.clouds) objectsToCheck.push(this.clouds);
+            
+            // Intersect with either the earth or clouds
+            const intersects = this.raycaster.intersectObjects(objectsToCheck, true);
+            console.log('Intersections found:', intersects.length);
+            
+            // If something was clicked
             if (intersects.length > 0) {
                 // Get the intersection point
                 const point = intersects[0].point.clone().normalize();
@@ -975,6 +1011,8 @@ class EarthVisualizer {
                 // Convert to latitude and longitude
                 const lat = Math.asin(point.y) * (180 / Math.PI);
                 const lng = Math.atan2(point.z, point.x) * (180 / Math.PI);
+                
+                console.log('Clicked position:', lat, lng);
                 
                 // Set the start marker at the clicked location
                 this.setMarkerPosition('start-marker', lat, lng, true);
@@ -994,7 +1032,10 @@ class EarthVisualizer {
                         end: { lat: antiLat, lng: antiLng }
                     }
                 });
+                console.log('Dispatching location-selected event');
                 this.container.dispatchEvent(locationEvent);
+            } else {
+                console.log('No intersection with Earth objects');
             }
         });
         
