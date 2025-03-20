@@ -43,8 +43,9 @@ class EarthVisualizer {
     init() {
         this.log('Initializing 3D Earth...');
         
-        // Create scene
+        // Create scene with a dark background
         this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x000000);
         
         // Create camera
         this.camera = new THREE.PerspectiveCamera(
@@ -55,13 +56,15 @@ class EarthVisualizer {
         );
         this.camera.position.z = 300;
         
-        // Create renderer
+        // Create renderer with proper settings
         this.renderer = new THREE.WebGLRenderer({ 
-            antialias: true, 
-            alpha: true 
+            antialias: true,
+            alpha: true,
+            powerPreference: "high-performance"
         });
         this.renderer.setSize(this.container.offsetWidth, this.container.offsetHeight);
-        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.outputEncoding = THREE.sRGBEncoding;
         
         // Clear container before appending
         while (this.container.firstChild) {
@@ -116,27 +119,31 @@ class EarthVisualizer {
         // Create Earth sphere with proper error handling
         const earthGeometry = new THREE.SphereGeometry(this.earthRadius, 64, 64);
         
+        // Load textures with proper error handling
+        const earthMap = textureLoader.load(earthMapUrl, 
+            () => this.log('Earth map texture loaded successfully'),
+            undefined,
+            error => console.error('Error loading Earth map texture:', error)
+        );
+        
+        const earthBump = textureLoader.load(earthBumpUrl,
+            () => this.log('Earth bump texture loaded successfully'),
+            undefined,
+            error => console.error('Error loading Earth bump texture:', error)
+        );
+        
+        const earthSpec = textureLoader.load(earthSpecUrl,
+            () => this.log('Earth specular texture loaded successfully'),
+            undefined,
+            error => console.error('Error loading Earth specular texture:', error)
+        );
+        
         try {
             const earthMaterial = new THREE.MeshPhongMaterial({
-                map: textureLoader.load(
-                    earthMapUrl,
-                    undefined,
-                    undefined,
-                    error => console.error('Error loading Earth map texture:', error)
-                ),
-                bumpMap: textureLoader.load(
-                    earthBumpUrl,
-                    undefined,
-                    undefined,
-                    error => console.error('Error loading Earth bump texture:', error)
-                ),
+                map: earthMap,
+                bumpMap: earthBump,
                 bumpScale: 0.5,
-                specularMap: textureLoader.load(
-                    earthSpecUrl,
-                    undefined,
-                    undefined,
-                    error => console.error('Error loading Earth specular texture:', error)
-                ),
+                specularMap: earthSpec,
                 specular: new THREE.Color(0x333333),
                 shininess: 15
             });

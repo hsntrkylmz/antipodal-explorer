@@ -83,6 +83,10 @@ main {
     align-items: center;
     min-height: var(--earth-size);
     margin: 2rem 0;
+    position: relative;
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 50%;
+    padding: 1rem;
 }
 
 .earth-visualization {
@@ -93,6 +97,7 @@ main {
     box-shadow: 0 0 50px rgba(0, 100, 200, 0.4);
     overflow: hidden;
     z-index: 1;
+    background-color: #000;
 }
 
 /* Three.js container will fill this element */
@@ -102,6 +107,9 @@ main {
     display: block;
     border-radius: 50%;
     cursor: grab;
+    position: absolute;
+    top: 0;
+    left: 0;
 }
 
 /* Location Panel Styles */
