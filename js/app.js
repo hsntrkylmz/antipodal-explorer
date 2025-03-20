@@ -368,21 +368,38 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    // Start journey animation
+    // Start the journey animation
     function startJourney() {
-        if (!userLocation || !antipodalLocation) return;
+        console.log('Starting journey with:', userLocation, antipodalLocation);
+        
+        if (!userLocation || !antipodalLocation) {
+            console.error('Location data missing for journey');
+            return;
+        }
         
         // Update UI
         startJourneyBtn.classList.add('hidden');
         journeyAnimationDiv.classList.remove('hidden');
         
-        // Start animation
-        earthVisualizer.startJourneyAnimation(
-            userLocation.lat, 
-            userLocation.lng,
-            antipodalLocation.lat,
-            antipodalLocation.lng
-        );
+        // Check if earthVisualizer is available in window scope
+        if (window.earthVisualizer) {
+            // Start animation
+            window.earthVisualizer.startJourneyAnimation(
+                userLocation.lat,
+                userLocation.lng,
+                antipodalLocation.lat,
+                antipodalLocation.lng
+            );
+        } else {
+            console.error('Earth visualizer not found');
+            // Show error message
+            journeyAnimationDiv.innerHTML = `
+                <div style="color: red; text-align: center; padding: 10px;">
+                    Error: Could not start journey animation.
+                    Please refresh the page and try again.
+                </div>
+            `;
+        }
     }
     
     // Reset application

@@ -71,6 +71,7 @@
                 <button id="reset-btn" class="btn hidden">Reset Journey</button>
                 <button id="debug-btn" class="btn" onclick="console.log('THREE.js loaded:', typeof THREE !== 'undefined'); console.log('Container exists:', document.querySelector('.earth-visualization'));">Debug</button>
                 <button id="force-render-btn" class="btn" onclick="forceRender()">Force Render</button>
+                <button id="test-coords-btn" class="btn" onclick="testCoordinates()">Test Coordinates</button>
             </div>
 
             <div class="info-panel">
@@ -121,7 +122,35 @@
             
             // Create a basic sphere
             const geometry = new THREE.SphereGeometry(100, 32, 32);
-            const material = new THREE.MeshBasicMaterial({ color: 0x1e88e5 });
+            
+            // Create a canvas for the texture
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            
+            // Fill with gradient blue (water)
+            const bgGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            bgGradient.addColorStop(0, '#1e4877');
+            bgGradient.addColorStop(0.5, '#4584b4');
+            bgGradient.addColorStop(1, '#1e4877');
+            
+            ctx.fillStyle = bgGradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Add land masses
+            ctx.fillStyle = '#55AA55';
+            ctx.beginPath();
+            ctx.ellipse(canvas.width * 0.5, canvas.height * 0.4, 150, 180, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Create texture from canvas
+            const texture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.MeshPhongMaterial({ 
+                map: texture,
+                shininess: 5
+            });
+            
             const sphere = new THREE.Mesh(geometry, material);
             scene.add(sphere);
             
@@ -143,6 +172,13 @@
             
             animate();
             console.log("Basic sphere rendering completed!");
+            
+            // Global variables to use for emergency testing
+            window._scene = scene;
+            window._camera = camera;
+            window._renderer = renderer;
+            window._sphere = sphere;
+            
         } catch (error) {
             console.error("Force render failed:", error);
             container.innerHTML = `<div style="color:white;padding:20px;text-align:center;">
@@ -150,6 +186,42 @@
                 <p>Please check your browser console for details.</p>
             </div>`;
         }
+    }
+    
+    function testCoordinates() {
+        if (!window._scene || !window._sphere) {
+            alert("Please click 'Force Render' first to create the emergency Earth");
+            return;
+        }
+        
+        // Example coordinates - New York
+        const lat = 40.7128;
+        const lng = -74.0060;
+        
+        // Convert lat/lng to 3D position
+        const phi = (90 - lat) * (Math.PI / 180);
+        const theta = (lng + 180) * (Math.PI / 180);
+        
+        const radius = 101;
+        const x = -radius * Math.sin(phi) * Math.cos(theta);
+        const y = radius * Math.cos(phi);
+        const z = radius * Math.sin(phi) * Math.sin(theta);
+        
+        // Create a marker
+        const markerGeometry = new THREE.SphereGeometry(5, 16, 16);
+        const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+        marker.position.set(x, y, z);
+        
+        // Remove old markers
+        const oldMarkers = window._scene.children.filter(child => child.userData.isMarker);
+        oldMarkers.forEach(marker => window._scene.remove(marker));
+        
+        // Add new marker
+        marker.userData.isMarker = true;
+        window._scene.add(marker);
+        
+        console.log(`Added marker at lat: ${lat}, lng: ${lng}, position: ${x}, ${y}, ${z}`);
     }
     </script>
 </body>
