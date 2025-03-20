@@ -125,8 +125,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         // Set markers on the Earth
-        earthVisualization.setMarkerPosition('start', startLocation.lat, startLocation.lng, true);
-        earthVisualization.setMarkerPosition('end', endLocation.lat, endLocation.lng, false);
+        earthVisualization.setMarkerPosition('start-marker', startLocation.lat, startLocation.lng, true);
+        earthVisualization.setMarkerPosition('end-marker', endLocation.lat, endLocation.lng, false);
         
         // Update UI
         digButton.disabled = false;
