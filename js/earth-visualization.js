@@ -49,15 +49,22 @@ class EarthVisualizer {
                 45, 
                 this.container.offsetWidth / this.container.offsetHeight, 
                 0.1, 
-                1000
+                2000
             );
             this.camera.position.z = 300;
             
             // Create renderer
             this.renderer = new THREE.WebGLRenderer({ 
-                antialias: true
+                antialias: true,
+                alpha: true
             });
             this.renderer.setSize(this.container.offsetWidth, this.container.offsetHeight);
+            this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            
+            // Set correct color encoding
+            if (this.renderer.outputEncoding !== undefined) {
+                this.renderer.outputEncoding = THREE.sRGBEncoding;
+            }
             
             // Clear container before appending
             while (this.container.firstChild) {
@@ -66,21 +73,35 @@ class EarthVisualizer {
             
             this.container.appendChild(this.renderer.domElement);
             
-            // Add simple lighting
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            // Improved lighting for better realism
+            // Ambient light (overall illumination)
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
             this.scene.add(ambientLight);
             
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            directionalLight.position.set(1, 1, 1);
-            this.scene.add(directionalLight);
+            // Main directional light (sunlight)
+            const sunLight = new THREE.DirectionalLight(0xffffff, 1.0);
+            sunLight.position.set(1.5, 0.5, 1);
+            this.scene.add(sunLight);
             
-            // Create a simple Earth
+            // Add a subtle blue light from the opposite side (earth-shine)
+            const backLight = new THREE.DirectionalLight(0x4466aa, 0.4);
+            backLight.position.set(-1, -0.2, -1);
+            this.scene.add(backLight);
+            
+            // Create a realistic Earth
             this.createSimpleEarth();
+            
+            // Add window resize handler
+            window.addEventListener('resize', () => {
+                this.camera.aspect = this.container.offsetWidth / this.container.offsetHeight;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(this.container.offsetWidth, this.container.offsetHeight);
+            });
             
             // Start animation loop
             this.animate();
             
-            this.log('3D Earth initialized successfully with simple approach');
+            this.log('3D Earth initialized successfully with realistic approach');
         } catch (error) {
             console.error('Error initializing Earth:', error);
             this.container.innerHTML = `
@@ -92,177 +113,111 @@ class EarthVisualizer {
         }
     }
     
-    // Create a simple Earth with procedural textures
+    // Create a realistic Earth with actual texture maps
     createSimpleEarth() {
-        // Create a simple earth with gradient colors
+        this.log('Creating realistic Earth with texture maps...');
+        
+        // Create Earth geometry with higher detail
         const earthGeometry = new THREE.SphereGeometry(this.earthRadius, 64, 64);
         
-        // Create a canvas for the texture
-        const canvas = document.createElement('canvas');
-        canvas.width = 2048;
-        canvas.height = 1024;
-        const ctx = canvas.getContext('2d');
+        // Earth texture maps from NASA/public sources
+        const textureLoader = new THREE.TextureLoader();
+        textureLoader.crossOrigin = "Anonymous";
         
-        // Fill with gradient blue (water)
-        const bgGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-        bgGradient.addColorStop(0, '#1e3877'); // dark blue at poles
-        bgGradient.addColorStop(0.5, '#4584b4'); // medium blue at equator
-        bgGradient.addColorStop(1, '#1e3877'); // dark blue at poles again
+        // Use reliable CDN-hosted texture maps
+        const earthTextures = {
+            map: 'https://unpkg.com/three-globe@2.24.4/example/img/earth-blue-marble.jpg',
+            bumpMap: 'https://unpkg.com/three-globe@2.24.4/example/img/earth-topology.png',
+            specularMap: 'https://unpkg.com/three-globe@2.24.4/example/img/earth-water.png',
+            cloudsMap: 'https://unpkg.com/three-globe@2.24.4/example/img/earth-clouds.png'
+        };
         
-        ctx.fillStyle = bgGradient;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        // Add continents with more accurate shapes
-        ctx.fillStyle = '#3d9c56'; // Green land color
-        
-        // North America
-        ctx.beginPath();
-        ctx.moveTo(canvas.width * 0.20, canvas.height * 0.27);
-        ctx.bezierCurveTo(
-            canvas.width * 0.15, canvas.height * 0.35,
-            canvas.width * 0.20, canvas.height * 0.45,
-            canvas.width * 0.25, canvas.height * 0.55
-        );
-        ctx.bezierCurveTo(
-            canvas.width * 0.25, canvas.height * 0.60,
-            canvas.width * 0.22, canvas.height * 0.65,
-            canvas.width * 0.18, canvas.height * 0.50
-        );
-        ctx.bezierCurveTo(
-            canvas.width * 0.15, canvas.height * 0.40,
-            canvas.width * 0.10, canvas.height * 0.30,
-            canvas.width * 0.20, canvas.height * 0.27
-        );
-        ctx.fill();
-        
-        // South America
-        ctx.beginPath();
-        ctx.moveTo(canvas.width * 0.28, canvas.height * 0.55);
-        ctx.bezierCurveTo(
-            canvas.width * 0.30, canvas.height * 0.65,
-            canvas.width * 0.30, canvas.height * 0.75,
-            canvas.width * 0.25, canvas.height * 0.85
-        );
-        ctx.bezierCurveTo(
-            canvas.width * 0.20, canvas.height * 0.75,
-            canvas.width * 0.22, canvas.height * 0.65,
-            canvas.width * 0.28, canvas.height * 0.55
-        );
-        ctx.fill();
-        
-        // Europe
-        ctx.beginPath();
-        ctx.moveTo(canvas.width * 0.45, canvas.height * 0.35);
-        ctx.bezierCurveTo(
-            canvas.width * 0.50, canvas.height * 0.30,
-            canvas.width * 0.55, canvas.height * 0.30,
-            canvas.width * 0.55, canvas.height * 0.40
-        );
-        ctx.bezierCurveTo(
-            canvas.width * 0.50, canvas.height * 0.45,
-            canvas.width * 0.48, canvas.height * 0.43,
-            canvas.width * 0.45, canvas.height * 0.35
-        );
-        ctx.fill();
-        
-        // Africa
-        ctx.beginPath();
-        ctx.moveTo(canvas.width * 0.50, canvas.height * 0.40);
-        ctx.bezierCurveTo(
-            canvas.width * 0.55, canvas.height * 0.45,
-            canvas.width * 0.57, canvas.height * 0.60,
-            canvas.width * 0.52, canvas.height * 0.75
-        );
-        ctx.bezierCurveTo(
-            canvas.width * 0.45, canvas.height * 0.70,
-            canvas.width * 0.43, canvas.height * 0.55,
-            canvas.width * 0.50, canvas.height * 0.40
-        );
-        ctx.fill();
-        
-        // Asia
-        ctx.beginPath();
-        ctx.moveTo(canvas.width * 0.55, canvas.height * 0.35);
-        ctx.bezierCurveTo(
-            canvas.width * 0.65, canvas.height * 0.25,
-            canvas.width * 0.75, canvas.height * 0.30,
-            canvas.width * 0.80, canvas.height * 0.40
-        );
-        ctx.bezierCurveTo(
-            canvas.width * 0.75, canvas.height * 0.50,
-            canvas.width * 0.65, canvas.height * 0.55,
-            canvas.width * 0.55, canvas.height * 0.45
-        );
-        ctx.lineTo(canvas.width * 0.55, canvas.height * 0.35);
-        ctx.fill();
-        
-        // Australia
-        ctx.beginPath();
-        ctx.moveTo(canvas.width * 0.80, canvas.height * 0.65);
-        ctx.bezierCurveTo(
-            canvas.width * 0.85, canvas.height * 0.60,
-            canvas.width * 0.90, canvas.height * 0.65,
-            canvas.width * 0.87, canvas.height * 0.75
-        );
-        ctx.bezierCurveTo(
-            canvas.width * 0.82, canvas.height * 0.80,
-            canvas.width * 0.77, canvas.height * 0.75,
-            canvas.width * 0.80, canvas.height * 0.65
-        );
-        ctx.fill();
-        
-        // Antarctica
-        ctx.fillStyle = '#f0f0f0'; // White for snow
-        ctx.beginPath();
-        ctx.arc(canvas.width * 0.50, canvas.height * 0.90, canvas.width * 0.15, 0, Math.PI * 2);
-        ctx.fill();
-        
-        // Add grid lines for longitude/latitude
-        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
-        ctx.lineWidth = 1;
-        
-        // Latitude lines
-        for (let i = 0; i < 7; i++) {
-            const y = canvas.height * (i / 6);
-            ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(canvas.width, y);
-            ctx.stroke();
-        }
-        
-        // Longitude lines
-        for (let i = 0; i < 13; i++) {
-            const x = canvas.width * (i / 12);
-            ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, canvas.height);
-            ctx.stroke();
-        }
-        
-        // Create the texture from the canvas
-        const texture = new THREE.CanvasTexture(canvas);
-        
-        // Create the Earth material and mesh
+        // Create material with realistic Earth properties
         const earthMaterial = new THREE.MeshPhongMaterial({
-            map: texture,
-            shininess: 5,
-            specular: new THREE.Color(0x333333)
+            map: textureLoader.load(earthTextures.map, 
+                () => this.log('Earth texture loaded successfully'), 
+                undefined, 
+                err => console.error('Failed to load Earth texture:', err)),
+            bumpMap: textureLoader.load(earthTextures.bumpMap, 
+                () => this.log('Bump map loaded successfully'), 
+                undefined, 
+                err => console.error('Failed to load bump map:', err)),
+            bumpScale: 0.8,
+            specularMap: textureLoader.load(earthTextures.specularMap, 
+                () => this.log('Specular map loaded successfully'), 
+                undefined, 
+                err => console.error('Failed to load specular map:', err)),
+            specular: new THREE.Color(0x666666),
+            shininess: 15
         });
         
+        // Create Earth mesh
         this.earth = new THREE.Mesh(earthGeometry, earthMaterial);
         this.scene.add(this.earth);
         
-        // Add a glowing atmosphere
-        const atmosphereGeometry = new THREE.SphereGeometry(this.earthRadius * 1.025, 64, 64);
-        const atmosphereMaterial = new THREE.MeshPhongMaterial({
-            color: 0x88aaff,
+        // Create clouds layer
+        const cloudsGeometry = new THREE.SphereGeometry(this.earthRadius * 1.01, 64, 64);
+        const cloudsMaterial = new THREE.MeshPhongMaterial({
+            map: textureLoader.load(earthTextures.cloudsMap,
+                () => this.log('Clouds texture loaded successfully'),
+                undefined,
+                err => console.error('Failed to load clouds texture:', err)),
             transparent: true,
-            opacity: 0.2,
+            opacity: 0.3,
+            blending: THREE.AdditiveBlending
+        });
+        
+        const clouds = new THREE.Mesh(cloudsGeometry, cloudsMaterial);
+        this.scene.add(clouds);
+        
+        // Add slow rotation to clouds
+        this.clouds = clouds;
+        
+        // Add a subtle glow effect (atmosphere)
+        const atmosphereGeometry = new THREE.SphereGeometry(this.earthRadius * 1.02, 64, 64);
+        const atmosphereMaterial = new THREE.MeshPhongMaterial({
+            color: 0x5599ff,
+            transparent: true,
+            opacity: 0.15,
             side: THREE.BackSide
         });
         
         const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
         this.scene.add(atmosphere);
+        
+        // Add star field background
+        this.addStarField();
+    }
+    
+    // Add a star field to enhance the space ambiance
+    addStarField() {
+        const starsGeometry = new THREE.BufferGeometry();
+        const starCount = 5000;
+        const positions = new Float32Array(starCount * 3);
+        const sizes = new Float32Array(starCount);
+        
+        for (let i = 0; i < starCount; i++) {
+            // Random positions for stars
+            positions[i * 3] = (Math.random() - 0.5) * 2000;
+            positions[i * 3 + 1] = (Math.random() - 0.5) * 2000;
+            positions[i * 3 + 2] = (Math.random() - 0.5) * 2000;
+            
+            // Random sizes for stars
+            sizes[i] = Math.random() * 2;
+        }
+        
+        starsGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        starsGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+        
+        const starMaterial = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 1,
+            transparent: true,
+            sizeAttenuation: true
+        });
+        
+        const starField = new THREE.Points(starsGeometry, starMaterial);
+        this.scene.add(starField);
     }
     
     // Convert latitude and longitude to 3D position on the globe
@@ -289,40 +244,82 @@ class EarthVisualizer {
             this.scene.remove(this.endMarker);
         }
         
-        // Create a new marker with better visibility
-        const markerGeometry = new THREE.SphereGeometry(4, 16, 16);
-        const markerMaterial = new THREE.MeshBasicMaterial({
-            color: markerID === 'start-marker' ? 0x00ff00 : 0xff0000,
-            emissive: markerID === 'start-marker' ? 0x00ff00 : 0xff0000,
-            emissiveIntensity: 0.5
+        // Create a marker group
+        const markerGroup = new THREE.Group();
+        
+        // Pin style marker with pin head and stem
+        const pinHeadGeometry = new THREE.SphereGeometry(3, 16, 16);
+        const pinColor = markerID === 'start-marker' ? 0x00ff00 : 0xff0000;
+        const pinMaterial = new THREE.MeshPhongMaterial({
+            color: pinColor,
+            emissive: pinColor,
+            emissiveIntensity: 0.5,
+            shininess: 30
         });
         
-        const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-        marker.position.copy(position);
+        const pinHead = new THREE.Mesh(pinHeadGeometry, pinMaterial);
+        pinHead.position.copy(position);
+        markerGroup.add(pinHead);
         
-        // Add a larger transparent halo for better visibility
-        const haloGeometry = new THREE.SphereGeometry(6, 16, 16);
+        // Pin stem (cone pointing to the surface)
+        const direction = position.clone().normalize();
+        const stemLength = 8;
+        const pinStemGeometry = new THREE.CylinderGeometry(0.5, 2, stemLength, 8);
+        const pinStem = new THREE.Mesh(pinStemGeometry, pinMaterial);
+        
+        // Position the stem to point from the surface to the pinhead
+        const stemPosition = position.clone().sub(direction.multiplyScalar(stemLength/2));
+        pinStem.position.copy(stemPosition);
+        
+        // Orient the stem to point outward from the center of the Earth
+        pinStem.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+        
+        markerGroup.add(pinStem);
+        
+        // Add a glowing halo effect
+        const haloGeometry = new THREE.RingGeometry(5, 8, 32);
         const haloMaterial = new THREE.MeshBasicMaterial({
-            color: markerID === 'start-marker' ? 0x00ff00 : 0xff0000,
+            color: pinColor,
             transparent: true,
-            opacity: 0.3
+            opacity: 0.6,
+            side: THREE.DoubleSide
         });
         
         const halo = new THREE.Mesh(haloGeometry, haloMaterial);
         halo.position.copy(position);
-        
-        // Create a group for the marker and halo
-        const markerGroup = new THREE.Group();
-        markerGroup.add(marker);
+        halo.lookAt(0, 0, 0); // Face toward the center of the Earth
         markerGroup.add(halo);
+        
+        // Add label
+        const labelText = markerID === 'start-marker' ? 'Start' : 'Destination';
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 64;
+        const context = canvas.getContext('2d');
+        
+        // Draw label text
+        context.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.fillStyle = markerID === 'start-marker' ? '#00ff00' : '#ff0000';
+        context.font = 'bold 24px Arial';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.fillText(labelText, canvas.width / 2, canvas.height / 2);
+        
+        // Create label texture and sprite
+        const labelTexture = new THREE.CanvasTexture(canvas);
+        const labelMaterial = new THREE.SpriteMaterial({
+            map: labelTexture,
+            transparent: true
+        });
+        
+        const label = new THREE.Sprite(labelMaterial);
+        label.position.copy(position.clone().multiplyScalar(1.1));
+        label.scale.set(20, 10, 1);
+        markerGroup.add(label);
         
         // Add debug info
         console.log(`Marker ${markerID} at: lat=${lat}, lng=${lng}, pos=(${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`);
-        
-        // Add coordinate axes for debugging
-        const axisLength = 10;
-        const axesHelper = new THREE.AxesHelper(axisLength);
-        marker.add(axesHelper);
         
         // Store reference and add to scene
         if (markerID === 'start-marker') {
@@ -333,7 +330,7 @@ class EarthVisualizer {
         
         this.scene.add(markerGroup);
         
-        // Rotate the Earth to show the marker (if it's a new position)
+        // Rotate the Earth to show the marker
         setTimeout(() => {
             // Calculate angle to rotate the Earth
             const targetRotationY = Math.atan2(-position.x, -position.z);
@@ -373,6 +370,7 @@ class EarthVisualizer {
         // Remove existing path if any
         if (this.digLine) {
             this.scene.remove(this.digLine);
+            this.digLine = null;
         }
         
         const startPos = this.latLngTo3d(startLat, startLng, this.earthRadius);
@@ -380,34 +378,75 @@ class EarthVisualizer {
         
         // Create a curve through the Earth
         const points = [];
+        const segments = 40; // More segments for smoother curve
         
         // Add points for a curved path through the Earth
-        for (let i = 0; i <= 20; i++) {
-            const t = i / 20;
-            const point = new THREE.Vector3().lerpVectors(startPos, endPos, t);
+        for (let i = 0; i <= segments; i++) {
+            const t = i / segments;
             
-            // Scale the point to stay slightly inside the Earth
-            if (i > 0 && i < 20) {
-                const distToCenter = point.length();
-                const centerFactor = Math.min(1, this.earthRadius * 0.6 / distToCenter);
-                point.multiplyScalar(centerFactor);
+            // Create a curved path that goes through the center of the Earth
+            // Use a quadratic curve for a more natural drilling path
+            if (i <= segments / 2) {
+                // First half: from start to center
+                const segmentT = i / (segments / 2);
+                // Curve downward toward center
+                const centerPoint = new THREE.Vector3(0, 0, 0);
+                const point = new THREE.Vector3();
+                
+                // Quadratic interpolation: start -> center
+                point.x = (1 - segmentT) * (1 - segmentT) * startPos.x + 2 * (1 - segmentT) * segmentT * 0 + segmentT * segmentT * 0;
+                point.y = (1 - segmentT) * (1 - segmentT) * startPos.y + 2 * (1 - segmentT) * segmentT * 0 + segmentT * segmentT * 0;
+                point.z = (1 - segmentT) * (1 - segmentT) * startPos.z + 2 * (1 - segmentT) * segmentT * 0 + segmentT * segmentT * 0;
+                
+                points.push(point);
+            } else {
+                // Second half: from center to end
+                const segmentT = (i - segments / 2) / (segments / 2);
+                const point = new THREE.Vector3();
+                
+                // Quadratic interpolation: center -> end
+                point.x = (1 - segmentT) * (1 - segmentT) * 0 + 2 * (1 - segmentT) * segmentT * 0 + segmentT * segmentT * endPos.x;
+                point.y = (1 - segmentT) * (1 - segmentT) * 0 + 2 * (1 - segmentT) * segmentT * 0 + segmentT * segmentT * endPos.y;
+                point.z = (1 - segmentT) * (1 - segmentT) * 0 + 2 * (1 - segmentT) * segmentT * 0 + segmentT * segmentT * endPos.z;
+                
+                points.push(point);
             }
-            
-            points.push(point);
         }
         
-        // Create geometry from points
-        const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+        // Create the path group
+        const pathGroup = new THREE.Group();
         
-        // Create line material
-        const lineMaterial = new THREE.LineBasicMaterial({
+        // Create a tube geometry for a more realistic tunnel effect
+        const curve = new THREE.CatmullRomCurve3(points);
+        const tubeGeometry = new THREE.TubeGeometry(curve, segments, 1.5, 8, false);
+        const tubeMaterial = new THREE.MeshPhongMaterial({
             color: 0xffff00,
+            transparent: true,
+            opacity: 0.6,
+            side: THREE.DoubleSide,
+            emissive: 0xffff00,
+            emissiveIntensity: 0.3
+        });
+        
+        const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
+        pathGroup.add(tube);
+        
+        // Add dotted line for better visibility
+        const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+        const lineMaterial = new THREE.LineDashedMaterial({
+            color: 0xffffff,
+            dashSize: 3,
+            gapSize: 1,
             linewidth: 2
         });
         
-        // Create line
-        this.digLine = new THREE.Line(lineGeometry, lineMaterial);
-        this.scene.add(this.digLine);
+        const line = new THREE.Line(lineGeometry, lineMaterial);
+        line.computeLineDistances(); // Required for dashed lines
+        pathGroup.add(line);
+        
+        // Store and add to scene
+        this.digLine = pathGroup;
+        this.scene.add(pathGroup);
         
         return points;
     }
@@ -430,14 +469,33 @@ class EarthVisualizer {
         // Draw dig path
         const pathPoints = this.drawDigPath(startLat, startLng, endLat, endLng);
         
+        // Store original camera position for reset
+        const originalCameraPosition = this.camera.position.clone();
+        const originalCameraLookAt = new THREE.Vector3(0, 0, 0);
+        
         // Create a traveling sphere that moves along the path
-        const travellerGeometry = new THREE.SphereGeometry(5, 16, 16);
-        const travellerMaterial = new THREE.MeshBasicMaterial({
-            color: 0xffff00
+        const travellerGeometry = new THREE.SphereGeometry(3, 32, 32);
+        const travellerMaterial = new THREE.MeshPhongMaterial({
+            color: 0xffff00,
+            emissive: 0xffff00,
+            emissiveIntensity: 0.7,
+            shininess: 20
         });
         
         const traveller = new THREE.Mesh(travellerGeometry, travellerMaterial);
         this.scene.add(traveller);
+        
+        // Add a glowing trail behind the traveller
+        const trailGeometry = new THREE.SphereGeometry(2, 16, 16);
+        const trailMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffff00,
+            transparent: true,
+            opacity: 0.7
+        });
+        
+        // Store trails for animation
+        const trails = [];
+        const maxTrails = 10;
         
         // Start at the beginning of the path
         let pathIndex = 0;
@@ -454,8 +512,12 @@ class EarthVisualizer {
             if (pathIndex >= pathPoints.length) {
                 // Animation complete
                 setTimeout(() => {
+                    // Remove traveller and trails
                     this.scene.remove(traveller);
-                    this.isAnimating = false;
+                    trails.forEach(trail => this.scene.remove(trail));
+                    
+                    // Reset camera position with animation
+                    this.animateCameraTo(originalCameraPosition, originalCameraLookAt, 1500);
                     
                     // Update UI
                     if (this.progressBar) this.progressBar.style.width = '100%';
@@ -467,6 +529,8 @@ class EarthVisualizer {
                     
                     const resetBtn = document.getElementById('reset-btn');
                     if (resetBtn) resetBtn.classList.remove('hidden');
+                    
+                    this.isAnimating = false;
                 }, 500);
                 
                 return;
@@ -474,6 +538,30 @@ class EarthVisualizer {
             
             // Update traveller position
             traveller.position.copy(pathPoints[pathIndex]);
+            
+            // Add trail effects
+            if (pathIndex % 3 === 0 && pathIndex > 0) {
+                const trail = new THREE.Mesh(trailGeometry, trailMaterial.clone());
+                trail.position.copy(pathPoints[pathIndex - 1]);
+                trail.userData.creationTime = Date.now();
+                trail.userData.initialOpacity = 0.7;
+                trails.push(trail);
+                this.scene.add(trail);
+                
+                // Limit number of trails
+                if (trails.length > maxTrails) {
+                    const oldestTrail = trails.shift();
+                    this.scene.remove(oldestTrail);
+                }
+            }
+            
+            // Update existing trails (fade out)
+            trails.forEach(trail => {
+                const age = Date.now() - trail.userData.creationTime;
+                const opacity = Math.max(0, trail.userData.initialOpacity - (age / 2000));
+                trail.material.opacity = opacity;
+                trail.scale.multiplyScalar(0.98); // Shrink trail over time
+            });
             
             // Update progress
             const progress = Math.floor((pathIndex / (pathPoints.length - 1)) * 100);
@@ -492,24 +580,73 @@ class EarthVisualizer {
                 }
             }
             
+            // Move camera to follow the journey at key points
+            if (pathIndex === Math.floor(pathPoints.length * 0.25)) {
+                // Approaching core - move camera closer
+                const targetPosition = pathPoints[pathIndex].clone().multiplyScalar(1.5);
+                this.animateCameraTo(targetPosition, new THREE.Vector3(0, 0, 0), 2000);
+            } else if (pathIndex === Math.floor(pathPoints.length * 0.5)) {
+                // At core - look toward destination
+                const lookDirection = pathPoints[pathPoints.length - 1].clone().normalize();
+                const targetPosition = lookDirection.clone().multiplyScalar(-this.earthRadius * 1.5);
+                this.animateCameraTo(targetPosition, new THREE.Vector3(0, 0, 0), 2000);
+            }
+            
             // Increment path index
             pathIndex++;
             
             // Continue animation
-            setTimeout(animateDigging, 150);
+            setTimeout(animateDigging, 120);
         };
         
         // Start animation
         animateDigging();
     }
     
+    // Animate camera to a position and lookAt target
+    animateCameraTo(targetPosition, targetLookAt, duration = 1000) {
+        const startPosition = this.camera.position.clone();
+        const startRotation = this.camera.quaternion.clone();
+        
+        // Create a dummy camera to calculate the target rotation
+        const dummyCamera = this.camera.clone();
+        dummyCamera.position.copy(targetPosition);
+        dummyCamera.lookAt(targetLookAt);
+        const targetRotation = dummyCamera.quaternion.clone();
+        
+        const startTime = Date.now();
+        
+        const updateCamera = () => {
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(1, elapsed / duration);
+            const easedProgress = this.easeInOutCubic(progress);
+            
+            // Interpolate position
+            this.camera.position.lerpVectors(startPosition, targetPosition, easedProgress);
+            
+            // Interpolate rotation using quaternions
+            THREE.Quaternion.slerp(startRotation, targetRotation, this.camera.quaternion, easedProgress);
+            
+            // Continue animation if not complete
+            if (progress < 1) {
+                requestAnimationFrame(updateCamera);
+            }
+        };
+        
+        updateCamera();
+    }
+    
     // Animation loop
     animate() {
         this.animationFrameId = requestAnimationFrame(() => this.animate());
         
-        // Slowly rotate earth
+        // Rotate Earth and clouds at different speeds
         if (this.earth) {
-            this.earth.rotation.y += 0.002;
+            this.earth.rotation.y += 0.0005;
+        }
+        
+        if (this.clouds) {
+            this.clouds.rotation.y += 0.0007; // Slightly faster than Earth
         }
         
         // Render scene
