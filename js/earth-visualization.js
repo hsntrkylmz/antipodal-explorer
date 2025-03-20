@@ -64,7 +64,13 @@ class EarthVisualizer {
         });
         this.renderer.setSize(this.container.offsetWidth, this.container.offsetHeight);
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        this.renderer.outputEncoding = THREE.sRGBEncoding;
+        
+        // Use sRGBEncoding or outputColorSpace depending on THREE.js version
+        if (this.renderer.outputEncoding !== undefined) {
+            this.renderer.outputEncoding = THREE.sRGBEncoding;
+        } else if (this.renderer.outputColorSpace !== undefined) {
+            this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+        }
         
         // Clear container before appending
         while (this.container.firstChild) {
@@ -111,10 +117,10 @@ class EarthVisualizer {
         // Load Earth texture
         const textureLoader = new THREE.TextureLoader();
         
-        // URLs for Earth textures (using Three.js examples)
-        const earthMapUrl = 'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_atmos_2048.jpg';
-        const earthBumpUrl = 'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_normal_2048.jpg';
-        const earthSpecUrl = 'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_specular_2048.jpg';
+        // URLs for Earth textures (alternative sources with better availability)
+        const earthMapUrl = 'https://unpkg.com/three-globe@2.30.0/example/img/earth-blue-marble.jpg';
+        const earthBumpUrl = 'https://unpkg.com/three-globe@2.30.0/example/img/earth-topology.png';
+        const earthSpecUrl = 'https://unpkg.com/three-globe@2.30.0/example/img/earth-water.png';
         
         // Create Earth sphere with proper error handling
         const earthGeometry = new THREE.SphereGeometry(this.earthRadius, 64, 64);
@@ -521,4 +527,25 @@ class EarthVisualizer {
 
 // Create earth visualizer instance
 console.log('Creating Earth visualizer instance');
-const earthVisualizer = new EarthVisualizer();
+// Wait for THREE.js to be fully loaded before creating the Earth visualizer
+window.addEventListener('DOMContentLoaded', () => {
+    // Check if THREE is loaded
+    if (typeof THREE === 'undefined') {
+        console.error('THREE.js is not loaded!');
+        // Add a visible error message to the container
+        const container = document.querySelector('.earth-visualization');
+        if (container) {
+            container.innerHTML = `
+                <div style="color: white; text-align: center; padding: 20px;">
+                    <p>Error: THREE.js library failed to load.</p>
+                    <p>Please check your internet connection and try again.</p>
+                </div>
+            `;
+        }
+        return;
+    }
+    
+    // Initialize the Earth visualizer
+    console.log('THREE.js is loaded, initializing Earth visualizer');
+    const earthVisualizer = new EarthVisualizer();
+});
