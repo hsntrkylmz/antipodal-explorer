@@ -95,47 +95,149 @@ class EarthVisualizer {
     // Create a simple Earth with procedural textures
     createSimpleEarth() {
         // Create a simple earth with gradient colors
-        const earthGeometry = new THREE.SphereGeometry(this.earthRadius, 32, 32);
+        const earthGeometry = new THREE.SphereGeometry(this.earthRadius, 64, 64);
         
         // Create a canvas for the texture
         const canvas = document.createElement('canvas');
-        canvas.width = 1024;
-        canvas.height = 512;
+        canvas.width = 2048;
+        canvas.height = 1024;
         const ctx = canvas.getContext('2d');
         
         // Fill with gradient blue (water)
         const bgGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-        bgGradient.addColorStop(0, '#1e4877'); // dark blue at poles
+        bgGradient.addColorStop(0, '#1e3877'); // dark blue at poles
         bgGradient.addColorStop(0.5, '#4584b4'); // medium blue at equator
-        bgGradient.addColorStop(1, '#1e4877'); // dark blue at poles again
+        bgGradient.addColorStop(1, '#1e3877'); // dark blue at poles again
         
         ctx.fillStyle = bgGradient;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         
-        // Add random land masses (green)
-        ctx.fillStyle = '#55AA55';
+        // Add continents with more accurate shapes
+        ctx.fillStyle = '#3d9c56'; // Green land color
         
-        // Draw some continents
-        // Africa + Europe
+        // North America
         ctx.beginPath();
-        ctx.ellipse(canvas.width * 0.5, canvas.height * 0.4, 150, 180, 0, 0, Math.PI * 2);
+        ctx.moveTo(canvas.width * 0.20, canvas.height * 0.27);
+        ctx.bezierCurveTo(
+            canvas.width * 0.15, canvas.height * 0.35,
+            canvas.width * 0.20, canvas.height * 0.45,
+            canvas.width * 0.25, canvas.height * 0.55
+        );
+        ctx.bezierCurveTo(
+            canvas.width * 0.25, canvas.height * 0.60,
+            canvas.width * 0.22, canvas.height * 0.65,
+            canvas.width * 0.18, canvas.height * 0.50
+        );
+        ctx.bezierCurveTo(
+            canvas.width * 0.15, canvas.height * 0.40,
+            canvas.width * 0.10, canvas.height * 0.30,
+            canvas.width * 0.20, canvas.height * 0.27
+        );
         ctx.fill();
         
-        // Americas
+        // South America
         ctx.beginPath();
-        ctx.ellipse(canvas.width * 0.3, canvas.height * 0.5, 100, 200, 0, 0, Math.PI * 2);
+        ctx.moveTo(canvas.width * 0.28, canvas.height * 0.55);
+        ctx.bezierCurveTo(
+            canvas.width * 0.30, canvas.height * 0.65,
+            canvas.width * 0.30, canvas.height * 0.75,
+            canvas.width * 0.25, canvas.height * 0.85
+        );
+        ctx.bezierCurveTo(
+            canvas.width * 0.20, canvas.height * 0.75,
+            canvas.width * 0.22, canvas.height * 0.65,
+            canvas.width * 0.28, canvas.height * 0.55
+        );
         ctx.fill();
         
-        // Asia + Australia
+        // Europe
         ctx.beginPath();
-        ctx.ellipse(canvas.width * 0.7, canvas.height * 0.5, 180, 160, 0, 0, Math.PI * 2);
+        ctx.moveTo(canvas.width * 0.45, canvas.height * 0.35);
+        ctx.bezierCurveTo(
+            canvas.width * 0.50, canvas.height * 0.30,
+            canvas.width * 0.55, canvas.height * 0.30,
+            canvas.width * 0.55, canvas.height * 0.40
+        );
+        ctx.bezierCurveTo(
+            canvas.width * 0.50, canvas.height * 0.45,
+            canvas.width * 0.48, canvas.height * 0.43,
+            canvas.width * 0.45, canvas.height * 0.35
+        );
+        ctx.fill();
+        
+        // Africa
+        ctx.beginPath();
+        ctx.moveTo(canvas.width * 0.50, canvas.height * 0.40);
+        ctx.bezierCurveTo(
+            canvas.width * 0.55, canvas.height * 0.45,
+            canvas.width * 0.57, canvas.height * 0.60,
+            canvas.width * 0.52, canvas.height * 0.75
+        );
+        ctx.bezierCurveTo(
+            canvas.width * 0.45, canvas.height * 0.70,
+            canvas.width * 0.43, canvas.height * 0.55,
+            canvas.width * 0.50, canvas.height * 0.40
+        );
+        ctx.fill();
+        
+        // Asia
+        ctx.beginPath();
+        ctx.moveTo(canvas.width * 0.55, canvas.height * 0.35);
+        ctx.bezierCurveTo(
+            canvas.width * 0.65, canvas.height * 0.25,
+            canvas.width * 0.75, canvas.height * 0.30,
+            canvas.width * 0.80, canvas.height * 0.40
+        );
+        ctx.bezierCurveTo(
+            canvas.width * 0.75, canvas.height * 0.50,
+            canvas.width * 0.65, canvas.height * 0.55,
+            canvas.width * 0.55, canvas.height * 0.45
+        );
+        ctx.lineTo(canvas.width * 0.55, canvas.height * 0.35);
+        ctx.fill();
+        
+        // Australia
+        ctx.beginPath();
+        ctx.moveTo(canvas.width * 0.80, canvas.height * 0.65);
+        ctx.bezierCurveTo(
+            canvas.width * 0.85, canvas.height * 0.60,
+            canvas.width * 0.90, canvas.height * 0.65,
+            canvas.width * 0.87, canvas.height * 0.75
+        );
+        ctx.bezierCurveTo(
+            canvas.width * 0.82, canvas.height * 0.80,
+            canvas.width * 0.77, canvas.height * 0.75,
+            canvas.width * 0.80, canvas.height * 0.65
+        );
         ctx.fill();
         
         // Antarctica
-        ctx.fillStyle = '#EEEEEE';
+        ctx.fillStyle = '#f0f0f0'; // White for snow
         ctx.beginPath();
-        ctx.ellipse(canvas.width * 0.5, canvas.height * 0.85, 120, 60, 0, 0, Math.PI * 2);
+        ctx.arc(canvas.width * 0.50, canvas.height * 0.90, canvas.width * 0.15, 0, Math.PI * 2);
         ctx.fill();
+        
+        // Add grid lines for longitude/latitude
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+        ctx.lineWidth = 1;
+        
+        // Latitude lines
+        for (let i = 0; i < 7; i++) {
+            const y = canvas.height * (i / 6);
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(canvas.width, y);
+            ctx.stroke();
+        }
+        
+        // Longitude lines
+        for (let i = 0; i < 13; i++) {
+            const x = canvas.width * (i / 12);
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, canvas.height);
+            ctx.stroke();
+        }
         
         // Create the texture from the canvas
         const texture = new THREE.CanvasTexture(canvas);
@@ -143,14 +245,15 @@ class EarthVisualizer {
         // Create the Earth material and mesh
         const earthMaterial = new THREE.MeshPhongMaterial({
             map: texture,
-            shininess: 5
+            shininess: 5,
+            specular: new THREE.Color(0x333333)
         });
         
         this.earth = new THREE.Mesh(earthGeometry, earthMaterial);
         this.scene.add(this.earth);
         
         // Add a glowing atmosphere
-        const atmosphereGeometry = new THREE.SphereGeometry(this.earthRadius * 1.025, 32, 32);
+        const atmosphereGeometry = new THREE.SphereGeometry(this.earthRadius * 1.025, 64, 64);
         const atmosphereMaterial = new THREE.MeshPhongMaterial({
             color: 0x88aaff,
             transparent: true,
@@ -177,7 +280,7 @@ class EarthVisualizer {
     // Set marker at a specific lat,lng position
     setMarkerPosition(markerID, lat, lng) {
         this.log(`Setting marker ${markerID} at position ${lat.toFixed(2)}, ${lng.toFixed(2)}`);
-        const position = this.latLngTo3d(lat, lng, this.earthRadius * 1.01);
+        const position = this.latLngTo3d(lat, lng, this.earthRadius * 1.02);
         
         // Check if marker already exists, remove it if it does
         if (markerID === 'start-marker' && this.startMarker) {
@@ -186,23 +289,81 @@ class EarthVisualizer {
             this.scene.remove(this.endMarker);
         }
         
-        // Create a new marker
-        const markerGeometry = new THREE.SphereGeometry(3, 16, 16);
+        // Create a new marker with better visibility
+        const markerGeometry = new THREE.SphereGeometry(4, 16, 16);
         const markerMaterial = new THREE.MeshBasicMaterial({
-            color: markerID === 'start-marker' ? 0x00ff00 : 0xff0000
+            color: markerID === 'start-marker' ? 0x00ff00 : 0xff0000,
+            emissive: markerID === 'start-marker' ? 0x00ff00 : 0xff0000,
+            emissiveIntensity: 0.5
         });
         
         const marker = new THREE.Mesh(markerGeometry, markerMaterial);
         marker.position.copy(position);
         
+        // Add a larger transparent halo for better visibility
+        const haloGeometry = new THREE.SphereGeometry(6, 16, 16);
+        const haloMaterial = new THREE.MeshBasicMaterial({
+            color: markerID === 'start-marker' ? 0x00ff00 : 0xff0000,
+            transparent: true,
+            opacity: 0.3
+        });
+        
+        const halo = new THREE.Mesh(haloGeometry, haloMaterial);
+        halo.position.copy(position);
+        
+        // Create a group for the marker and halo
+        const markerGroup = new THREE.Group();
+        markerGroup.add(marker);
+        markerGroup.add(halo);
+        
+        // Add debug info
+        console.log(`Marker ${markerID} at: lat=${lat}, lng=${lng}, pos=(${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`);
+        
+        // Add coordinate axes for debugging
+        const axisLength = 10;
+        const axesHelper = new THREE.AxesHelper(axisLength);
+        marker.add(axesHelper);
+        
         // Store reference and add to scene
         if (markerID === 'start-marker') {
-            this.startMarker = marker;
+            this.startMarker = markerGroup;
         } else {
-            this.endMarker = marker;
+            this.endMarker = markerGroup;
         }
         
-        this.scene.add(marker);
+        this.scene.add(markerGroup);
+        
+        // Rotate the Earth to show the marker (if it's a new position)
+        setTimeout(() => {
+            // Calculate angle to rotate the Earth
+            const targetRotationY = Math.atan2(-position.x, -position.z);
+            // Smoothly animate to this rotation over 1 second
+            const startRotation = this.earth.rotation.y;
+            const duration = 1000;
+            const startTime = Date.now();
+            
+            const animateRotation = () => {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(1, elapsed / duration);
+                
+                // Use easing for smoother animation
+                const easedProgress = this.easeInOutCubic(progress);
+                this.earth.rotation.y = startRotation + (targetRotationY - startRotation) * easedProgress;
+                
+                if (progress < 1) {
+                    requestAnimationFrame(animateRotation);
+                }
+            };
+            
+            if (markerID === 'start-marker') {
+                animateRotation();
+            }
+        }, 100);
+    }
+    
+    // Easing function for smoother animations
+    easeInOutCubic(t) {
+        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
     }
     
     // Draw path between start and end points through the Earth
@@ -380,6 +541,30 @@ class EarthVisualizer {
         
         // Reset animation state
         this.isAnimating = false;
+        
+        // Set Earth rotation back to default
+        if (this.earth) {
+            // Animate back to default rotation
+            const targetRotation = 0;
+            const startRotation = this.earth.rotation.y;
+            const duration = 1000;
+            const startTime = Date.now();
+            
+            const animateReset = () => {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(1, elapsed / duration);
+                
+                // Use easing for smoother animation
+                const easedProgress = this.easeInOutCubic(progress);
+                this.earth.rotation.y = startRotation + (targetRotation - startRotation) * easedProgress;
+                
+                if (progress < 1) {
+                    requestAnimationFrame(animateReset);
+                }
+            };
+            
+            animateReset();
+        }
     }
 }
 
