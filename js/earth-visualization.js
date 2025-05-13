@@ -1395,104 +1395,133 @@ class EarthVisualizer {
     }
     
     // Start the journey animation between the two markers
-    startJourneyAnimation() {
-        this.log('Starting journey animation');
-        
+    async startJourneyAnimation() {
+        this.log('Starting enhanced journey animation');
         if (!this.markerGroups['start-marker'] || !this.markerGroups['end-marker']) {
             this.log('Error: Need both start and end markers to animate the journey');
             return false;
         }
-        
-        // Already animating
         if (this.isAnimating) {
             this.log('Animation already in progress');
             return false;
         }
-        
-        // Set animation flag
         this.isAnimating = true;
-        
-        // Update status
-        this.updateStatusMessage('Preparing for the journey...', 0);
-        
-        // Create the dig path between markers
-        this.drawDigPath();
-        
-        // Get start position
+        this.updateStatusMessage('Emphasizing your starting point...', 0);
+        // 1. Pulse and glow the start marker
+        this.pulseMarker('start-marker', 1.5);
+        // 2. Orbit camera around start marker
         let startPosition;
         this.markerGroups['start-marker'].traverse((object) => {
             if (!startPosition && object.isMesh) {
                 startPosition = object.position.clone();
             }
         });
-        
-        // Focus on starting position
-        this.focusOnMarker('start-marker', 1500);
-        
-        // Start journey animation sequence
-        setTimeout(() => {
-            this.updateStatusMessage('Starting the dig...', 10);
-            
-            // Create traveler (digging sphere)
-            this.createTraveler();
-            
-            // Start at the beginning of the path
-            this.travelerProgress = 0;
-            
-            // Move camera to a good angle to view the journey start
-            const cameraPosition = startPosition.clone().multiplyScalar(1.8);
-            const cameraTarget = startPosition.clone();
-            
-            // Animate camera to starting position
-            this.animateCameraToPosition(cameraPosition, cameraTarget, 2000, () => {
-                // Start the digging animation
-                this.updateStatusMessage('Digging through the Earth...', 20);
-                
-                // Look at Earth center when halfway through
-                setTimeout(() => {
-                    const halfwayProgress = 0.5;
-                    setTimeout(() => {
-                        this.updateStatusMessage('Approaching the Earth\'s core...', 40);
-                        
-                        // Move camera to see Earth's interior
-                        const centerDirection = new THREE.Vector3(0, 1, 0);
-                        const interiorView = centerDirection.clone().multiplyScalar(1.8);
-                        this.animateCameraToPosition(interiorView, new THREE.Vector3(0, 0, 0), 3000);
-                    }, this.getTimeForProgress(halfwayProgress / 2));
-                    
-                    // Halfway point - look at center
-                    setTimeout(() => {
-                        this.updateStatusMessage('Passing through the Earth\'s core...', 50);
-                        
-                        // Move camera to center view
-                        const sideDirection = new THREE.Vector3(1, 0.5, 0.5).normalize();
-                        const centerView = sideDirection.clone().multiplyScalar(1.5);
-                        this.animateCameraToPosition(centerView, new THREE.Vector3(0, 0, 0), 2000);
-                    }, this.getTimeForProgress(halfwayProgress));
-                    
-                    // Approaching destination
-                    setTimeout(() => {
-                        this.updateStatusMessage('Approaching destination...', 75);
-                        
-                        // Move camera to prepare for emergence
-                        let endPosition;
-                        this.markerGroups['end-marker'].traverse((object) => {
-                            if (!endPosition && object.isMesh) {
-                                endPosition = object.position.clone();
-                            }
-                        });
-                        
-                        if (endPosition) {
-                            // Position camera to watch the traveler emerge
-                            const approachDirection = endPosition.clone().normalize();
-                            const approachPosition = approachDirection.multiplyScalar(1.8);
-                            this.animateCameraToPosition(approachPosition, endPosition, 3000);
-                        }
-                    }, this.getTimeForProgress(halfwayProgress * 1.5));
-                }, 2000);
-            });
-        }, 1500);
-        
+        await new Promise(resolve => {
+            // Orbit camera for 1.2s
+            let t = 0;
+            const duration = 1200;
+            const orbitRadius = 2.2;
+            const animateOrbit = () => {
+                t += 16;
+                const angle = (t / duration) * Math.PI * 2 * 0.25;
+                const camPos = startPosition.clone().normalize().multiplyScalar(orbitRadius);
+                camPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), angle);
+                this.camera.position.copy(camPos);
+                this.camera.lookAt(startPosition);
+                if (t < duration) {
+                    requestAnimationFrame(animateOrbit);
+                } else {
+                    resolve();
+                }
+            };
+            animateOrbit();
+        });
+        // 3. Draw dig path and create traveler
+        this.updateStatusMessage('Starting the dig...', 10);
+        this.drawDigPath();
+        this.createTraveler();
+        this.travelerProgress = 0;
+        // 4. Animate camera to follow traveler
+        const digSegments = this.digPathSegments;
+        const magmaTexture = new THREE.TextureLoader().load('assets/magma.jpg');
+        let magmaShown = false;
+        let coreBurstShown = false;
+        const animateDig = () => {
+            if (!this.isAnimating) return;
+            // Move traveler along the path
+            this.travelerProgress += 0.0035; // speed
+            if (this.travelerProgress > 1) this.travelerProgress = 1;
+            const pos = this.digPath.getPointAt(this.travelerProgress);
+            this.travelerMesh.position.copy(pos);
+            // Camera follows traveler
+            const camOffset = pos.clone().normalize().multiplyScalar(2.2);
+            this.camera.position.lerp(camOffset, 0.15);
+            this.camera.lookAt(pos);
+            // Tunnel color/magma effect at core
+            if (!magmaShown && this.travelerProgress > 0.45 && this.travelerProgress < 0.55) {
+                magmaShown = true;
+                if (this.trailMesh && magmaTexture) {
+                    this.trailMesh.material.map = magmaTexture;
+                    this.trailMesh.material.color.set(0xff6600);
+                    this.trailMesh.material.opacity = 0.7;
+                    this.trailMesh.material.needsUpdate = true;
+                }
+                this.updateStatusMessage('Entering the magma core!', 50);
+            }
+            // Core burst effect
+            if (!coreBurstShown && this.travelerProgress > 0.5) {
+                coreBurstShown = true;
+                // Add a glowing burst at the center
+                const burstGeo = new THREE.SphereGeometry(0.18, 32, 32);
+                const burstMat = new THREE.MeshBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0.7 });
+                const burst = new THREE.Mesh(burstGeo, burstMat);
+                burst.position.set(0, 0, 0);
+                this.scene.add(burst);
+                setTimeout(() => { this.scene.remove(burst); burst.geometry.dispose(); burst.material.dispose(); }, 900);
+            }
+            // Restore tunnel after magma
+            if (magmaShown && this.travelerProgress > 0.65) {
+                if (this.trailMesh) {
+                    this.trailMesh.material.map = null;
+                    this.trailMesh.material.color.set(0x00ffff);
+                    this.trailMesh.material.opacity = 0.2;
+                    this.trailMesh.material.needsUpdate = true;
+                }
+            }
+            // End sequence
+            if (this.travelerProgress < 1) {
+                requestAnimationFrame(animateDig);
+            } else {
+                // Traveler emerges at antipode
+                this.updateStatusMessage('Emerging at the other side!', 100);
+                this.pulseMarker('end-marker', 1.5);
+                // Orbit camera around end marker
+                let endPosition;
+                this.markerGroups['end-marker'].traverse((object) => {
+                    if (!endPosition && object.isMesh) {
+                        endPosition = object.position.clone();
+                    }
+                });
+                let t = 0;
+                const duration = 1200;
+                const orbitRadius = 2.2;
+                const animateEndOrbit = () => {
+                    t += 16;
+                    const angle = (t / duration) * Math.PI * 2 * 0.25;
+                    const camPos = endPosition.clone().normalize().multiplyScalar(orbitRadius);
+                    camPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), angle);
+                    this.camera.position.copy(camPos);
+                    this.camera.lookAt(endPosition);
+                    if (t < duration) {
+                        requestAnimationFrame(animateEndOrbit);
+                    } else {
+                        this.completeJourneyAnimation();
+                    }
+                };
+                animateEndOrbit();
+            }
+        };
+        animateDig();
         return true;
     }
     
