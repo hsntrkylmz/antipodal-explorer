@@ -158,29 +158,23 @@ document.addEventListener('DOMContentLoaded', () => {
     earthVisualization.progressBar = progressBar;
     earthVisualization.statusText = statusMessage;
     
-    // Modified location input handling with fallback
+    // Modified location input handling with real geocoding API and fallback
     locateButton.addEventListener('click', async () => {
         const query = locationInput.value.trim();
-        
         if (!query) {
             alert('Please enter a location or use one of the sample locations');
             return;
         }
-        
         try {
-            // Show loading state
             locateButton.textContent = 'Searching...';
             locateButton.disabled = true;
-            
             // Check if it's coordinates format (lat, lng)
             const coordsFormat = /^(-?\d+\.?\d*),\s*(-?\d+\.?\d*)$/;
             const match = query.match(coordsFormat);
-            
             if (match) {
                 // Parse as coordinates
                 const lat = parseFloat(match[1]);
                 const lng = parseFloat(match[2]);
-                
                 if (isValidCoordinates(lat, lng)) {
                     startLocation = { lat, lng };
                     await processLocation('Coordinates: ' + query);
@@ -188,43 +182,42 @@ document.addEventListener('DOMContentLoaded', () => {
                     alert('Invalid coordinates. Latitude must be between -90 and 90, longitude between -180 and 180.');
                 }
             } else {
-                // FALLBACK: For demo purposes, use New York coordinates as fallback
-                // This ensures the app works even if the geocoding API fails
-                startLocation = { lat: 40.7128, lng: -74.0060 };
-                await processLocation(query + ' (Using demo location due to API limitations)');
-                
-                /* Original code with API call:
+                // Use OpenStreetMap Nominatim API for geocoding
                 try {
-                    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`);
+                    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`, {
+                        headers: {
+                            'Accept-Language': 'en',
+                            'User-Agent': 'AntipodalExplorer/1.0 (your@email.com)'
+                        }
+                    });
                     const data = await response.json();
-                    
                     if (data && data.length > 0) {
                         const result = data[0];
                         startLocation = {
                             lat: parseFloat(result.lat),
                             lng: parseFloat(result.lon)
                         };
-                        await processLocation();
+                        await processLocation(result.display_name);
                     } else {
                         alert('Location not found. Please try a different search term.');
                     }
                 } catch (error) {
                     console.error('Geocoding API error:', error);
-                    alert('Error connecting to location service. Please check your internet connection and try again.');
+                    alert('Error connecting to location service. Please check your internet connection and try again. Using New York as fallback.');
+                    startLocation = { lat: 40.7128, lng: -74.0060 };
+                    await processLocation(query + ' (Fallback: New York)');
                 }
-                */
             }
         } catch (error) {
             console.error('Error locating position:', error);
             alert('There was an error locating your position. Please try again or use the sample locations.');
         } finally {
-            // Reset button state
             locateButton.textContent = 'Search';
             locateButton.disabled = false;
         }
     });
     
-    // Event listener for current location button
+    // Event listener for current location button (improved error handling)
     currentLocationButton.addEventListener('click', function() {
         console.log('Current location button clicked');
         this.disabled = true;
@@ -236,26 +229,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     const lat = position.coords.latitude;
                     const lng = position.coords.longitude;
                     console.log(`Geolocation success: ${lat}, ${lng}`);
-
-                    // Update local state
                     startLocation = { lat, lng };
                     endLocation = calculateAntipode(lat, lng);
                     startCoords.textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
                     endCoords.textContent = `${endLocation.lat.toFixed(6)}, ${endLocation.lng.toFixed(6)}`;
-
-                    // Set markers
                     earthVisualization.setMarkerPosition('start-marker', lat, lng, true);
                     earthVisualization.setMarkerPosition('end-marker', endLocation.lat, endLocation.lng, false);
-
-                    // Update addresses
                     reverseGeocode(lat, lng, 'start-address');
                     reverseGeocode(endLocation.lat, endLocation.lng, 'end-address');
-
-                    // Show end location info and dig button
                     document.getElementById('end-location').classList.remove('hidden');
                     digButton.disabled = false;
-
-                    // Re-enable button
                     currentLocationButton.disabled = false;
                     currentLocationButton.innerHTML = originalText;
                 },
