@@ -319,7 +319,7 @@ main {
     z-index: 1;
 }
 
-.primary-btn, .secondary-btn, .focus-btn {
+.primary-btn, .secondary-btn, .secondary-btn.light, .focus-btn, .sample-btn {
     position: relative;
     border-radius: 8px;
     box-shadow: 0 2px 12px 0 rgba(52, 152, 219, 0.18), 0 1.5px 6px 0 rgba(255, 64, 129, 0.10);
@@ -327,20 +327,22 @@ main {
     background-clip: padding-box;
     transition: box-shadow 0.3s, border 0.3s, background 0.3s;
     overflow: hidden;
+    z-index: 1;
+    background: rgba(30, 30, 40, 0.35);
 }
 
-.primary-btn::after, .secondary-btn::after, .focus-btn::after {
+.primary-btn::after, .secondary-btn::after, .secondary-btn.light::after, .focus-btn::after, .sample-btn::after {
     content: '';
     position: absolute;
-    top: -2px; left: -2px; right: -2px; bottom: -2px;
-    border-radius: 10px;
+    top: -3px; left: -3px; right: -3px; bottom: -3px;
+    border-radius: 12px;
     pointer-events: none;
     z-index: 0;
-    background: linear-gradient(120deg, rgba(52,152,219,0.5), rgba(255,64,129,0.3), rgba(76,175,80,0.2));
-    opacity: 0.7;
-    filter: blur(4px);
+    background: linear-gradient(120deg, rgba(52,152,219,0.7), rgba(255,64,129,0.5), rgba(76,175,80,0.3));
+    opacity: 0.9;
+    filter: blur(8px);
     transition: opacity 0.3s;
-    animation: btn-glow 3s linear infinite;
+    animation: btn-glow 2.5s linear infinite;
 }
 
 @keyframes btn-glow {
@@ -349,15 +351,20 @@ main {
     100% { opacity: 0.7; }
 }
 
-.primary-btn:hover, .secondary-btn:hover, .focus-btn:hover {
-    box-shadow: 0 0 24px 4px rgba(52,152,219,0.35), 0 2px 12px 0 rgba(255,64,129,0.18);
+.primary-btn:hover, .secondary-btn:hover, .secondary-btn.light:hover, .focus-btn:hover, .sample-btn:hover {
+    box-shadow: 0 0 24px 4px rgba(52,152,219,0.45), 0 2px 12px 0 rgba(255,64,129,0.28);
     border: 2px solid var(--accent-color);
-    background: rgba(52,152,219,0.08);
+    background: rgba(52,152,219,0.13);
 }
 
-.primary-btn:active, .secondary-btn:active, .focus-btn:active {
-    box-shadow: 0 0 32px 8px rgba(255,64,129,0.25), 0 2px 12px 0 rgba(52,152,219,0.18);
+.primary-btn:active, .secondary-btn:active, .secondary-btn.light:active, .focus-btn:active, .sample-btn:active {
+    box-shadow: 0 0 32px 8px rgba(255,64,129,0.35), 0 2px 12px 0 rgba(52,152,219,0.28);
     border: 2px solid var(--secondary-color);
+}
+
+/* Remove conflicting backgrounds for these buttons */
+.primary-btn, .secondary-btn, .secondary-btn.light, .focus-btn, .sample-btn {
+    background-color: transparent !important;
 }
 
 .info-panel h1 {
