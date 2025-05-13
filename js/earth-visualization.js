@@ -97,12 +97,11 @@ class EarthVisualizer {
                 };
             }
             
-            // Add ambient light
-            const ambientLight = new THREE.AmbientLight(0x333333);
+            // Add ambient light (brighter)
+            const ambientLight = new THREE.AmbientLight(0xffffff, 1.2); // was 0x333333, now white and stronger
             this.scene.add(ambientLight);
-            
-            // Add directional light (sun)
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            // Add directional light (sun, brighter)
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 2.2); // was 1, now 2.2
             directionalLight.position.set(5, 3, 5);
             this.scene.add(directionalLight);
             

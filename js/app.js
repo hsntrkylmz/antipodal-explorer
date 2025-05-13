@@ -161,6 +161,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- REWRITTEN LOCATION SEARCH & GEOLOCATION SECTION ---
     // Handles: search by address/city, search by coordinates, and use my location
     locateButton.addEventListener('click', async () => {
+        console.log('[Location Search] Button clicked');
         const query = locationInput.value.trim();
         if (!query) {
             alert('Please enter a location or use one of the sample locations');
@@ -169,7 +170,6 @@ document.addEventListener('DOMContentLoaded', () => {
         locateButton.textContent = 'Searching...';
         locateButton.disabled = true;
         try {
-            // Check for coordinates input
             const coordsFormat = /^(-?\d+\.?\d*),\s*(-?\d+\.?\d*)$/;
             const match = query.match(coordsFormat);
             if (match) {
@@ -177,13 +177,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const lng = parseFloat(match[2]);
                 if (isValidCoordinates(lat, lng)) {
                     startLocation = { lat, lng };
+                    alert(`[Location Search] Using coordinates: ${lat}, ${lng}`);
                     await processLocation(`Coordinates: ${lat}, ${lng}`);
                 } else {
                     alert('Invalid coordinates. Latitude must be between -90 and 90, longitude between -180 and 180.');
                 }
             } else {
-                // Use OpenStreetMap Nominatim API for geocoding
                 try {
+                    console.log('[Location Search] Fetching geocode for:', query);
                     const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`, {
                         headers: {
                             'Accept-Language': 'en',
@@ -191,12 +192,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     });
                     const data = await response.json();
+                    console.log('[Location Search] Geocode API response:', data);
                     if (data && data.length > 0) {
                         const result = data[0];
                         startLocation = {
                             lat: parseFloat(result.lat),
                             lng: parseFloat(result.lon)
                         };
+                        alert(`[Location Search] Found: ${result.display_name}`);
                         await processLocation(result.display_name);
                     } else {
                         alert('Location not found. Please try a different search term.');
@@ -216,6 +219,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     currentLocationButton.addEventListener('click', function() {
+        console.log('[Geolocation] Button clicked');
         this.disabled = true;
         const originalText = this.innerHTML;
         this.innerHTML = '<span>📍</span> Getting your location...';
@@ -230,6 +234,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const lat = position.coords.latitude;
                 const lng = position.coords.longitude;
                 startLocation = { lat, lng };
+                alert(`[Geolocation] Success: ${lat}, ${lng}`);
                 await processLocation('Your Current Location');
                 this.disabled = false;
                 this.innerHTML = originalText;
@@ -269,25 +274,21 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Process the located position
     async function processLocation(locationNameOverride = null) {
-        if (!startLocation) return;
-        
-        // Calculate antipodal point
+        console.log('[processLocation] Called with:', startLocation, locationNameOverride);
+        if (!startLocation) {
+            alert('[processLocation] No startLocation set!');
+            return;
+        }
         endLocation = calculateAntipode(startLocation.lat, startLocation.lng);
-        
-        // Update UI with coordinates
         startCoords.textContent = `${startLocation.lat.toFixed(6)}, ${startLocation.lng.toFixed(6)}`;
         endCoords.textContent = `${endLocation.lat.toFixed(6)}, ${endLocation.lng.toFixed(6)}`;
-        
-        // If we have a location name override, use it
         if (locationNameOverride) {
             startAddress.textContent = locationNameOverride;
             endAddress.textContent = 'Antipode of ' + locationNameOverride;
         } else {
-            // Try to get address information
             try {
                 const startAddressInfo = await reverseGeocode(startLocation.lat, startLocation.lng);
                 startAddress.textContent = startAddressInfo || 'Unknown location';
-                
                 const endAddressInfo = await reverseGeocode(endLocation.lat, endLocation.lng);
                 endAddress.textContent = endAddressInfo || 'Unknown location';
             } catch (error) {
@@ -296,14 +297,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 endAddress.textContent = 'Address lookup failed';
             }
         }
-        
-        // Set markers on the Earth
-        earthVisualization.setMarkerPosition('start-marker', startLocation.lat, startLocation.lng, true);
-        earthVisualization.setMarkerPosition('end-marker', endLocation.lat, endLocation.lng, false);
-        
-        // Update UI
-        digButton.disabled = false;
-        endLocation.classList.remove('hidden');
+        try {
+            earthVisualization.setMarkerPosition('start-marker', startLocation.lat, startLocation.lng, true);
+            earthVisualization.setMarkerPosition('end-marker', endLocation.lat, endLocation.lng, false);
+            digButton.disabled = false;
+            endLocation.classList.remove('hidden');
+            alert('[processLocation] Markers set and UI updated.');
+        } catch (err) {
+            alert('[processLocation] Error setting markers: ' + err);
+            console.error('[processLocation] Error setting markers:', err);
+        }
     }
     
     // Calculate antipodal point (opposite side of the Earth)
