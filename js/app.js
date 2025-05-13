@@ -14,7 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const startAddress = document.getElementById('start-address');
     const endCoords = document.getElementById('end-coords');
     const endAddress = document.getElementById('end-address');
-    const endLocation = document.getElementById('end-location');
+    const endLocationPanel = document.getElementById('end-location');
     const statusMessage = document.getElementById('status-message');
     const journeyStatus = document.querySelector('.journey-status');
     const progressBar = document.querySelector('.progress');
@@ -85,7 +85,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // Enable digging
                 digButton.disabled = false;
-                endLocation.classList.remove('hidden');
+                endLocationPanel.classList.remove('hidden');
                 
                 console.log('Sample location successfully set');
             } catch (err) {
@@ -158,7 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
     earthVisualization.progressBar = progressBar;
     earthVisualization.statusText = statusMessage;
     
-    // --- REWRITTEN LOCATION SEARCH & GEOLOCATION SECTION ---
+    // --- MINIMAL, ROBUST LOCATION LOGIC ---
     // Handles: search by address/city, search by coordinates, and use my location
     locateButton.addEventListener('click', async () => {
         console.log('[Location Search] Button clicked');
@@ -265,7 +265,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         );
     });
-    // --- END REWRITE ---
+    // --- END MINIMAL, ROBUST LOCATION LOGIC ---
     
     // Check if coordinates are valid
     function isValidCoordinates(lat, lng) {
@@ -301,7 +301,7 @@ document.addEventListener('DOMContentLoaded', () => {
             earthVisualization.setMarkerPosition('start-marker', startLocation.lat, startLocation.lng, true);
             earthVisualization.setMarkerPosition('end-marker', endLocation.lat, endLocation.lng, false);
             digButton.disabled = false;
-            endLocation.classList.remove('hidden');
+            endLocationPanel.classList.remove('hidden');
             alert('[processLocation] Markers set and UI updated.');
         } catch (err) {
             alert('[processLocation] Error setting markers: ' + err);
@@ -322,7 +322,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // Reverse geocode coordinates to get location name
-    async function reverseGeocode(lat, lng, addressType) {
+    async function reverseGeocode(lat, lng) {
         try {
             const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10`);
             const data = await response.json();
@@ -350,11 +350,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 if (parts.length > 0) {
                     const address = parts.join(', ');
-                    if (addressType === 'start-address') {
-                        startAddress.textContent = address;
-                    } else if (addressType === 'end-address') {
-                        endAddress.textContent = address;
-                    }
                     return address;
                 }
             }
@@ -398,7 +393,7 @@ document.addEventListener('DOMContentLoaded', () => {
         startAddress.textContent = 'Not set';
         endCoords.textContent = 'Not set';
         endAddress.textContent = 'Not set';
-        endLocation.classList.add('hidden');
+        endLocationPanel.classList.add('hidden');
         resetButton.classList.add('hidden');
         digButton.disabled = true;
         journeyStatus.classList.add('hidden');
@@ -431,7 +426,7 @@ document.addEventListener('DOMContentLoaded', () => {
             endAddress.textContent = `Antipode (${parseFloat(endLat).toFixed(2)}, ${parseFloat(endLng).toFixed(2)})`;
             
             // Try to reverse geocode the locations in the background
-            reverseGeocode(startLocation.lat, startLocation.lng, 'start-address')
+            reverseGeocode(startLocation.lat, startLocation.lng)
                 .then(address => {
                     if (address) startAddress.textContent = address;
                 })
@@ -439,7 +434,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.error('Error reverse geocoding start location:', err);
                 });
                 
-            reverseGeocode(endLocation.lat, endLocation.lng, 'end-address')
+            reverseGeocode(endLocation.lat, endLocation.lng)
                 .then(address => {
                     if (address) endAddress.textContent = address;
                 })
@@ -449,7 +444,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Update UI
             digButton.disabled = false;
-            endLocation.classList.remove('hidden');
+            endLocationPanel.classList.remove('hidden');
             
             console.log('Successfully processed location from globe click');
         } catch (err) {
