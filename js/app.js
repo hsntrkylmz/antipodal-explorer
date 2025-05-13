@@ -2,6 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize Earth visualization with the correct container
     const earthContainer = document.querySelector('.earth-visualization');
     const earthVisualization = new EarthVisualizer(earthContainer);
+    window.earthVisualizer = earthVisualization;
     
     // DOM elements
     const locationInput = document.getElementById('location-input');
@@ -57,8 +58,8 @@ document.addEventListener('DOMContentLoaded', () => {
             // Update UI immediately
             startCoords.textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
             startAddress.textContent = locationName;
-            
-            // Calculate antipodal point
+                
+                // Calculate antipodal point
             endLocation = calculateAntipode(lat, lng);
             
             // Update end location UI
@@ -226,60 +227,41 @@ document.addEventListener('DOMContentLoaded', () => {
     // Event listener for current location button
     currentLocationButton.addEventListener('click', function() {
         console.log('Current location button clicked');
-        
-        // Disable button during geolocation
         this.disabled = true;
         const originalText = this.innerHTML;
         this.innerHTML = '<span>📍</span> Getting your location...';
-        
-        // Get geolocation
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(
-                // Success callback
                 function(position) {
                     const lat = position.coords.latitude;
                     const lng = position.coords.longitude;
                     console.log(`Geolocation success: ${lat}, ${lng}`);
-                    
-                    // Only update UI if Earth visualizer exists
-                    if (window.earthVisualizer) {
-                        // Calculate the antipodal point
-                        const antiLat = -lat;
-                        let antiLng = lng + 180;
-                        if (antiLng > 180) antiLng -= 360;
-                        
-                        // Set markers
-                        window.earthVisualizer.setMarkerPosition('start-marker', lat, lng, true);
-                        window.earthVisualizer.setMarkerPosition('end-marker', antiLat, antiLng, false);
-                        
-                        // Update location info in UI
-                        updateLocationDisplay({
-                            start: { lat, lng },
-                            end: { lat: antiLat, lng: antiLng }
-                        });
-                        
-                        // Also trigger reverse geocoding for the addresses
-                        reverseGeocode(lat, lng, 'start-address');
-                        reverseGeocode(antiLat, antiLng, 'end-address');
-                        
-                        // Show end location info and dig button
-                        document.getElementById('end-location').classList.remove('hidden');
-                        document.getElementById('dig-btn').disabled = false;
-                    } else {
-                        console.error('Earth visualizer not initialized');
-                        alert('Could not set location: Earth visualization not ready. Please refresh the page and try again.');
-                    }
-                    
+
+                    // Update local state
+                    startLocation = { lat, lng };
+                    endLocation = calculateAntipode(lat, lng);
+                    startCoords.textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+                    endCoords.textContent = `${endLocation.lat.toFixed(6)}, ${endLocation.lng.toFixed(6)}`;
+
+                    // Set markers
+                    earthVisualization.setMarkerPosition('start-marker', lat, lng, true);
+                    earthVisualization.setMarkerPosition('end-marker', endLocation.lat, endLocation.lng, false);
+
+                    // Update addresses
+                    reverseGeocode(lat, lng, 'start-address');
+                    reverseGeocode(endLocation.lat, endLocation.lng, 'end-address');
+
+                    // Show end location info and dig button
+                    document.getElementById('end-location').classList.remove('hidden');
+                    digButton.disabled = false;
+
                     // Re-enable button
-                    document.getElementById('current-location-btn').disabled = false;
-                    document.getElementById('current-location-btn').innerHTML = originalText;
+                    currentLocationButton.disabled = false;
+                    currentLocationButton.innerHTML = originalText;
                 },
-                // Error callback
                 function(error) {
                     console.error('Geolocation error:', error);
-                    
                     let errorMessage = 'Could not get your location. ';
-                    
                     switch(error.code) {
                         case error.PERMISSION_DENIED:
                             errorMessage += 'Location access was denied. Please allow location access in your browser settings.';
@@ -293,14 +275,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         default:
                             errorMessage += 'An unknown error occurred. Please try again or enter your location manually.';
                     }
-                    
                     alert(errorMessage);
-                    
-                    // Re-enable button
-                    document.getElementById('current-location-btn').disabled = false;
-                    document.getElementById('current-location-btn').innerHTML = originalText;
+                    currentLocationButton.disabled = false;
+                    currentLocationButton.innerHTML = originalText;
                 },
-                // Options
                 {
                     enableHighAccuracy: true,
                     timeout: 10000,
@@ -310,8 +288,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             console.error('Geolocation not supported');
             alert('Geolocation is not supported by your browser. Please enter your location manually.');
-            
-            // Re-enable button
             this.disabled = false;
             this.innerHTML = originalText;
         }
