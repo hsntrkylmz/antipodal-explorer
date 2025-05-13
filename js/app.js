@@ -158,26 +158,26 @@ document.addEventListener('DOMContentLoaded', () => {
     earthVisualization.progressBar = progressBar;
     earthVisualization.statusText = statusMessage;
     
-    // Modified location input handling with real geocoding API and fallback
+    // --- REWRITTEN LOCATION SEARCH & GEOLOCATION SECTION ---
+    // Handles: search by address/city, search by coordinates, and use my location
     locateButton.addEventListener('click', async () => {
         const query = locationInput.value.trim();
         if (!query) {
             alert('Please enter a location or use one of the sample locations');
             return;
         }
+        locateButton.textContent = 'Searching...';
+        locateButton.disabled = true;
         try {
-            locateButton.textContent = 'Searching...';
-            locateButton.disabled = true;
-            // Check if it's coordinates format (lat, lng)
+            // Check for coordinates input
             const coordsFormat = /^(-?\d+\.?\d*),\s*(-?\d+\.?\d*)$/;
             const match = query.match(coordsFormat);
             if (match) {
-                // Parse as coordinates
                 const lat = parseFloat(match[1]);
                 const lng = parseFloat(match[2]);
                 if (isValidCoordinates(lat, lng)) {
                     startLocation = { lat, lng };
-                    await processLocation('Coordinates: ' + query);
+                    await processLocation(`Coordinates: ${lat}, ${lng}`);
                 } else {
                     alert('Invalid coordinates. Latitude must be between -90 and 90, longitude between -180 and 180.');
                 }
@@ -187,7 +187,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`, {
                         headers: {
                             'Accept-Language': 'en',
-                            'User-Agent': 'AntipodalExplorer/1.0 (your@email.com)'
+                            'User-Agent': 'AntipodalExplorer/1.0 (contact@example.com)'
                         }
                     });
                     const data = await response.json();
@@ -203,9 +203,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 } catch (error) {
                     console.error('Geocoding API error:', error);
-                    alert('Error connecting to location service. Please check your internet connection and try again. Using New York as fallback.');
-                    startLocation = { lat: 40.7128, lng: -74.0060 };
-                    await processLocation(query + ' (Fallback: New York)');
+                    alert('Error connecting to location service. Please check your internet connection and try again.');
                 }
             }
         } catch (error) {
@@ -216,65 +214,53 @@ document.addEventListener('DOMContentLoaded', () => {
             locateButton.disabled = false;
         }
     });
-    
-    // Event listener for current location button (improved error handling)
+
     currentLocationButton.addEventListener('click', function() {
-        console.log('Current location button clicked');
         this.disabled = true;
         const originalText = this.innerHTML;
         this.innerHTML = '<span>📍</span> Getting your location...';
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                function(position) {
-                    const lat = position.coords.latitude;
-                    const lng = position.coords.longitude;
-                    console.log(`Geolocation success: ${lat}, ${lng}`);
-                    startLocation = { lat, lng };
-                    endLocation = calculateAntipode(lat, lng);
-                    startCoords.textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-                    endCoords.textContent = `${endLocation.lat.toFixed(6)}, ${endLocation.lng.toFixed(6)}`;
-                    earthVisualization.setMarkerPosition('start-marker', lat, lng, true);
-                    earthVisualization.setMarkerPosition('end-marker', endLocation.lat, endLocation.lng, false);
-                    reverseGeocode(lat, lng, 'start-address');
-                    reverseGeocode(endLocation.lat, endLocation.lng, 'end-address');
-                    document.getElementById('end-location').classList.remove('hidden');
-                    digButton.disabled = false;
-                    currentLocationButton.disabled = false;
-                    currentLocationButton.innerHTML = originalText;
-                },
-                function(error) {
-                    console.error('Geolocation error:', error);
-                    let errorMessage = 'Could not get your location. ';
-                    switch(error.code) {
-                        case error.PERMISSION_DENIED:
-                            errorMessage += 'Location access was denied. Please allow location access in your browser settings.';
-                            break;
-                        case error.POSITION_UNAVAILABLE:
-                            errorMessage += 'Location information is unavailable. Please enter your location manually.';
-                            break;
-                        case error.TIMEOUT:
-                            errorMessage += 'Location request timed out. Please try again or enter your location manually.';
-                            break;
-                        default:
-                            errorMessage += 'An unknown error occurred. Please try again or enter your location manually.';
-                    }
-                    alert(errorMessage);
-                    currentLocationButton.disabled = false;
-                    currentLocationButton.innerHTML = originalText;
-                },
-                {
-                    enableHighAccuracy: true,
-                    timeout: 10000,
-                    maximumAge: 0
-                }
-            );
-        } else {
-            console.error('Geolocation not supported');
+        if (!navigator.geolocation) {
             alert('Geolocation is not supported by your browser. Please enter your location manually.');
             this.disabled = false;
             this.innerHTML = originalText;
+            return;
         }
+        navigator.geolocation.getCurrentPosition(
+            async (position) => {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                startLocation = { lat, lng };
+                await processLocation('Your Current Location');
+                this.disabled = false;
+                this.innerHTML = originalText;
+            },
+            (error) => {
+                let errorMessage = 'Could not get your location. ';
+                switch(error.code) {
+                    case error.PERMISSION_DENIED:
+                        errorMessage += 'Location access was denied. Please allow location access in your browser settings.';
+                        break;
+                    case error.POSITION_UNAVAILABLE:
+                        errorMessage += 'Location information is unavailable. Please enter your location manually.';
+                        break;
+                    case error.TIMEOUT:
+                        errorMessage += 'Location request timed out. Please try again or enter your location manually.';
+                        break;
+                    default:
+                        errorMessage += 'An unknown error occurred. Please try again or enter your location manually.';
+                }
+                alert(errorMessage);
+                this.disabled = false;
+                this.innerHTML = originalText;
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 0
+            }
+        );
     });
+    // --- END REWRITE ---
     
     // Check if coordinates are valid
     function isValidCoordinates(lat, lng) {
